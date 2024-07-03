@@ -1,6 +1,6 @@
-# Digitalhub
+# Bologna Digital Twin Data Platform and Execution Infrastructure
 
-This repository provides deployment guidelines and some example use cases for the Digitalhub platform.
+This repository provides deployment guidelines and some example use cases for the GDB data platform and its corresponding execution infrastructure.
 
 The deployment and usage instructions for each use case can be found in the *docs* folder.
 
@@ -26,9 +26,9 @@ The platform deployment is managed via Docker Compose. Each documented use case 
 3. Change the IP in  'global.registry.url' and 'global.externalHostAddress' properties in values file (*helm/digitalhub/values.yaml*) with the one obtained in the previous step.
 4. Add Digitalhub repository:
 ```sh
-helm repo add digitalhub https://scc-digitalhub.github.io/digitalhub/
+helm repo add digitalhub https://github.com/Gemello-Digitale-Bologna/dataplatform/
 ```
-5. Install DigitalHub with Helm:
+5. Install DataPlatform with Helm:
 ```sh
     helm upgrade digitalhub digitalhub/digitalhub -n digitalhub --install --create-namespace --timeout 15m0s
 ```
