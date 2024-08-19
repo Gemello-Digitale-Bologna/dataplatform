@@ -1,5 +1,20 @@
 {{ $externalUrl := .Values.global.externalHostAddress -}}
 [
+  {{- if .Values.minio.enabled }}
+  {
+    "slug": "minio",
+    "name": "Minio",
+    "description": "S3-compatible datalake",
+    "port": "",
+    {{- if (index .Values "minio" "consoleIngress" "enabled") }}
+    {{- with (index .Values "minio" "consoleIngress" "hosts" 0) }}
+    "link": "https://{{ . }}"
+    {{- end }}
+    {{- else }}
+    "link": "http://{{ $externalUrl }}:{{ .Values.minio.consoleService.nodePort }}"
+    {{- end }}
+  },
+{{- end }}
   {
     "slug": "coder",
     "name": "Coder",
@@ -9,19 +24,6 @@
     "link": "https://{{ .Values.coder.coder.ingress.host }}"
     {{- else }}
     "link": "http://{{ $externalUrl }}:{{ .Values.coder.coder.service.httpNodePort }}"
-    {{- end }}
-  },
-  {
-    "slug": "dhcore",
-    "name": "DH Core",
-    "description": "Core Digital Hub",
-    "port": "",
-    {{- if .Values.core.ingress.enabled }}
-    {{- with (index .Values.core.ingress.hosts 0) }}
-    "link": "https://{{ .host }}"
-    {{- end }}
-    {{- else }}
-    "link": "http://{{ $externalUrl }}:{{ .Values.core.service.httpNodePort }}"
     {{- end }}
   },
   {
@@ -37,18 +39,29 @@
     "link": "http://{{ $externalUrl }}:{{ index .Values "kubernetes-resource-manager" "service" "nodePort"}}"
     {{- end }}
   },
+{{- if (index .Values.dashboard "additional-components" "enabled") }}
+{{- range (index .Values.dashboard "additional-components" "apps") }}
+  {
+    "slug": {{ .name | quote }},
+    "name": {{ .name | title | quote }},
+    "description": {{ .description | quote }},
+    "port": "",
+  {{- if .ingress.enabled }}
+    {{- with (index . "ingress" "hosts" 0) }}
+    "link": "https://{{ . }}"
+    {{- end }}
+  {{- else }}
+    "link": "http://{{ .service.name }}:{{ .service.port }}"
+  {{- end }}
+  },
+{{- end}}
+{{- end }}
 {{- if (index .Values "oauth2-proxy" "enabled") }}
 {{- range (index .Values "oauth2-proxy" "apps") }}
   {
     "slug": {{ .name | quote }},
     "name": {{ .name | title | quote }},
-    {{- if eq .name "nuclio"}}
-    "description": "Serverless platform",
-    {{- else if eq .name "mlrun" }}
-    "description": "ML Run platform UI and API for the MLOps processes",
-    {{- else if eq .name "kubeflow" }}
-    "description": "Kubeflow Pipelines is a platform for building and deploying portable, scalable machine learning (ML) workflows",
-    {{- end }}
+    "description": {{ .description | quote }},
     "port": "",
   {{- if .ingress.enabled }}
     {{- with (index . "ingress" "hosts" 0) }}
@@ -61,6 +74,8 @@
     "link": "http://{{ $externalUrl }}:{{ index .Values "mlrun-ce" "mlrun" "ui" "service" "nodePort" }}"
     {{- else if eq .name "kubeflow" }}
     "link": "http://{{ $externalUrl }}:{{ index .Values "mlrun-ce" "pipelines" "ui" "service" "nodePort" }}"
+    {{- else }}
+    "link": "http://{{ .service.name }}:{{ .service.port }}"
     {{- end }}
   {{- end }}
   },
@@ -111,16 +126,16 @@
   },
 {{- end }}
   {
-    "slug": "minio",
-    "name": "Minio",
-    "description": "S3-compatible datalake",
+    "slug": "dhcore",
+    "name": "DH Core",
+    "description": "Core Digital Hub",
     "port": "",
-    {{- if (index .Values "minio" "consoleIngress" "enabled") }}
-    {{- with (index .Values "minio" "consoleIngress" "hosts" 0) }}
-    "link": "https://{{ . }}"
+    {{- if .Values.core.ingress.enabled }}
+    {{- with (index .Values.core.ingress.hosts 0) }}
+    "link": "https://{{ .host }}"
     {{- end }}
     {{- else }}
-    "link": "http://{{ $externalUrl }}:{{ .Values.minio.consoleService.nodePort }}"
+    "link": "http://{{ $externalUrl }}:{{ .Values.core.service.httpNodePort }}"
     {{- end }}
   }
 ]

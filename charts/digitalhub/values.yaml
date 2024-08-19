@@ -27,6 +27,8 @@ global:
   minio:
     rootUser: &minioRootUser minio
     rootPassword: &minioRootPassword minio123
+    digitalhubUser: &digitalhubUser digitalhub
+    digitalhubPassword: &digitalhubPassword digitalhub
     endpoint: &minioEndpoint "minio"
     endpointPort: &minioEndpointPort "9000"
     bucket: &minioBucket "datalake"
@@ -68,8 +70,15 @@ mlrun-ce:
       kaniko:
         insecurePushRegistry: true
         insecurePullRegistry: true
+      ingress:
+        enabled: false
   mlrun:
+    api:
+      image:
+        tag: 1.6.2-rc1
     ui:
+      image:
+        tag: 1.6.2-rc1
       ingress:
         enabled: false
     db:
@@ -87,11 +96,13 @@ mlrun-ce:
         name: ""
   jupyterNotebook:
     enabled: false
+    image:
+      tag: 1.6.2-rc1
   minio:
     enabled: false
-    rootUser: *minioRootUser
-    rootPassword: *minioRootPassword
     mode: standalone
+    rootUser: *digitalhubUser
+    rootPassword: *digitalhubPassword
     replicas: 1
     ingress:
       enabled: false
@@ -125,8 +136,8 @@ mlrun-ce:
         nodePort: 30100
     minio:
       enabled: true
-      accessKey: *minioRootUser
-      secretKey: *minioRootPassword
+      accessKey: *digitalhubUser
+      secretKey: *digitalhubPassword
       endpoint: *minioEndpoint
       endpointPort: *minioEndpointPort
       bucket: *minioBucket
@@ -142,31 +153,40 @@ coder:
   username: test
   password: Test12456@!
   email: test@digitalhub.test
-  customCoderTemplates:
-    - name: jupyter
-      nodePort: "30040"
-      iconUrl: https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Jupyter_logo.svg/1200px-Jupyter_logo.svg.png
-      image: "ghcr.io/scc-digitalhub/jupyter:1.6.2-rc6_0.4.0"
-    - name: dremio
-      nodePort: "30120"
-      iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/dremio_logo_icon_168234.png
-      image: "dremio/dremio-oss:24.1.0"
-    - name: sqlpad
-      nodePort: "30140"
-      iconUrl: https://i.ibb.co/TrBDsZM/sqlpad.png
-      image: "smartcommunitylab/sqlpad:nonroot"
-    - name: grafana
-      nodePort: "30130"
-      iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/grafana_logo_icon_171048.png
-      image: "smartcommunitylab/grafana"
-    - name: vscode
-      nodePort: "30190"
-      iconUrl: https://user-images.githubusercontent.com/29654835/27530003-e78876b8-5a13-11e7-8863-83fbdb900f72.png
-      image: "codercom/enterprise-base:ubuntu"
+  template:
+    upgrade:
+      enabled: false
+      token: ""
+    customTemplates:
+      - name: jupyter
+        nodePort: "30040"
+        iconUrl: https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Jupyter_logo.svg/1200px-Jupyter_logo.svg.png
+        image: "ghcr.io/scc-digitalhub/jupyter-3-10:0.6.1"
+        image39: "ghcr.io/scc-digitalhub/jupyter-3-9:0.6.1"
+        image311: "ghcr.io/scc-digitalhub/jupyter-3-11:0.6.1"
+        privileged: false
+      - name: dremio
+        nodePort: "30120"
+        iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/dremio_logo_icon_168234.png
+        image: "dremio/dremio-oss:24.1.0"
+      - name: sqlpad
+        nodePort: "30140"
+        iconUrl: https://i.ibb.co/TrBDsZM/sqlpad.png
+        image: "smartcommunitylab/sqlpad:nonroot"
+      - name: grafana
+        nodePort: "30130"
+        iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/grafana_logo_icon_171048.png
+        image: "smartcommunitylab/grafana"
+      - name: vscode
+        nodePort: "30190"
+        iconUrl: https://user-images.githubusercontent.com/29654835/27530003-e78876b8-5a13-11e7-8863-83fbdb900f72.png
+        image: "codercom/enterprise-base:ubuntu"
   coder:
     image:
-      tag: v2.6.0
+      tag: v2.12.0
     env:
+      - name: CODER_TELEMETRY
+        value: "false"
       - name: CODER_PG_USERNAME
         valueFrom:
           secretKeyRef:
@@ -258,8 +278,6 @@ postgrest-operator:
 core:
   enabled: true
   minio:
-    rootUser: *minioRootUser
-    rootPassword: *minioRootPassword
     endpoint: *minioEndpoint
     endpointPort: *minioEndpointPort
     bucket: *minioBucket
@@ -279,6 +297,9 @@ core:
     port: "8080"
   kfp:
     endpoint: "http://ml-pipeline:8888"
+  authentication:
+    openId:
+      enabled: false
   events:
     enabled: false
     rabbitmq:
@@ -302,6 +323,7 @@ core:
       initialize:
         enabled: true
         image: smartcommunitylab/k8s-ansible:1.30.0-1.7.0-nonroot
+  testSuite: "==0.6.0"
 
 kubernetes-resource-manager:
   enabled: true
@@ -335,6 +357,7 @@ oauth2-proxy:
   enabled: false
   apps:
     - name: ""
+      description: ""
       service:
         name: ""
         port: ""
@@ -420,6 +443,27 @@ dashboard:
         key: ""
     config:
       issuer: ""
+  additional-components:
+    enabled: false
+    apps:
+      - name: ""
+        description: ""
+        service:
+          name: ""
+          port: ""
+        ingress:
+          enabled: false
+          annotations: {}
+          ingressClassName: ""
+          hosts: []
+          path: /
+          tls: []
+        redirectUrl: ""
+        oidcIssuerUrl: ""
+        existingSecret:
+          name: ""
+          clientId: ""
+          secretKey: ""
 
 solr-operator:
   enabled: true
@@ -475,6 +519,20 @@ minio:
     claimPrefix: ""
     comment: ""
     displayName: ""
+  deploymentUpdate:
+    type: Recreate
+  users:
+    - accessKey: *digitalhubUser
+      secretKey: *digitalhubPassword
+      policy: readwritedigitalhub
+  policies:
+    - name: readwritedigitalhub
+      statements:
+        - effect: Allow
+          resources:
+            - 'arn:aws:s3:::datalake/*'
+          actions:
+            - "s3:*"
 
 minio-operator:
   enabled: true
