@@ -1,12 +1,16 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 0.23.0"
+      version = "~> 2.4.2"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.30"
+      version = "~> 2.36.0"
     }
   }
 }
@@ -21,7 +25,7 @@ locals {
 variable "namespace" {
   type        = string
   description = "The Kubernetes namespace to create workspaces in (must exist prior to creating workspaces)"
-  default     = "mlrun"
+  default     = "digitalhub"
 }
 
 variable "service_type" {
@@ -45,6 +49,11 @@ variable "https" {
 
 variable "external_url" {
   type = string
+}
+
+variable "extra_vars" {
+  type    = bool
+  default = false
 }
 
 provider "kubernetes" {
@@ -101,7 +110,7 @@ resource "coder_app" "grafana" {
   agent_id     = coder_agent.grafana.id
   slug         = "grafana"
   display_name = "grafana"
-  icon         = "https://cdn.icon-icons.com/icons2/2699/PNG/512/grafana_logo_icon_171048.png"
+  icon         = "https://cdn.iconscout.com/icon/free/png-256/free-grafana-logo-icon-download-in-svg-png-gif-file-formats--technology-social-media-company-vol-3-pack-logos-icons-3030088.png?f=webp"
   url          = "http://localhost:3000"
   subdomain    = true
   share        = "authenticated"
@@ -119,6 +128,37 @@ resource "coder_metadata" "grafana" {
   item {
     key   = "URL"
     value = local.grafana_url
+  }
+}
+
+resource "kubernetes_persistent_volume_claim" "database" {
+  metadata {
+    name      = "grafana-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}-database"
+    namespace = var.namespace
+    labels = {
+      "app.kubernetes.io/name"     = "grafana-pvc"
+      "app.kubernetes.io/instance" = "grafana-pvc-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+      "app.kubernetes.io/part-of"  = "coder"
+      "app.kubernetes.io/type"     = "pvc"
+      // Coder specific labels.
+      "com.coder.resource"       = "true"
+      "com.coder.workspace.id"   = data.coder_workspace.me.id
+      "com.coder.workspace.name" = data.coder_workspace.me.name
+      "com.coder.user.id"        = data.coder_workspace_owner.me.id
+      "com.coder.user.username"  = data.coder_workspace_owner.me.name
+    }
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
+    }
+  }
+  wait_until_bound = false
+  spec {
+    access_modes = ["ReadWriteOnce"]
+    resources {
+      requests = {
+        storage = "1Gi"
+      }
+    }
   }
 }
 
@@ -182,6 +222,9 @@ resource "kubernetes_deployment" "grafana" {
   }
   spec {
     replicas = 1
+    strategy {
+      type = "Recreate"
+    }
     selector {
       match_labels = {
         "app.kubernetes.io/name"     = "grafana-workspace"
@@ -202,6 +245,11 @@ resource "kubernetes_deployment" "grafana" {
       spec {
         security_context {
           run_as_user = "472"
+          fs_group = "472"
+          run_as_non_root = true
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
         }
         container {
           name              = "grafana"
@@ -211,6 +259,15 @@ resource "kubernetes_deployment" "grafana" {
           security_context {
             run_as_user                = "472"
             allow_privilege_escalation = false
+            capabilities {
+              drop = [
+                "ALL"
+              ]
+            }
+            run_as_non_root = true
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
           }
           env {
             name  = "CODER_AGENT_TOKEN"
@@ -232,6 +289,14 @@ resource "kubernetes_deployment" "grafana" {
             name  = "GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS"
             value = "digital-hub-dremio"
           }
+          dynamic "env_from" {
+            for_each = var.extra_vars ? [1] : []
+            content {
+              config_map_ref {
+                name = "grafana-additional-env"
+              }
+            }
+          }
           resources {
             requests = {
               "cpu"    = "250m"
@@ -244,13 +309,17 @@ resource "kubernetes_deployment" "grafana" {
           }
           volume_mount {
             mount_path = "/var/lib/grafana"
-            name       = "grafana-storage"
+            name       = "database"
+            sub_path   = "grafana"
             read_only  = false
           }
         }
         volume {
-          name = "grafana-storage"
-          empty_dir {}
+          name = "database"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.database.metadata.0.name
+            read_only  = false
+          }
         }
         affinity {
           pod_anti_affinity {

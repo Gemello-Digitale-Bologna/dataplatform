@@ -1,12 +1,16 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 0.23.0"
+      version = "~> 2.4.2"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.30"
+      version = "~> 2.36.0"
     }
   }
 }
@@ -21,7 +25,7 @@ locals {
 variable "namespace" {
   type        = string
   description = "The Kubernetes namespace to create workspaces in (must exist prior to creating workspaces)"
-  default     = "mlrun"
+  default     = "digitalhub"
 }
 
 variable "db_host" {
@@ -63,6 +67,11 @@ variable "https" {
 
 variable "external_url" {
   type = string
+}
+
+variable "extra_vars" {
+  type    = bool
+  default = false
 }
 
 provider "kubernetes" {
@@ -139,6 +148,37 @@ resource "coder_app" "sqlpad" {
   }
 }
 
+resource "kubernetes_persistent_volume_claim" "database" {
+  metadata {
+    name      = "sqlpad-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}-database"
+    namespace = var.namespace
+    labels = {
+      "app.kubernetes.io/name"     = "sqlpad-pvc"
+      "app.kubernetes.io/instance" = "sqlpad-pvc-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+      "app.kubernetes.io/part-of"  = "coder"
+      "app.kubernetes.io/type"     = "pvc"
+      // Coder specific labels.
+      "com.coder.resource"       = "true"
+      "com.coder.workspace.id"   = data.coder_workspace.me.id
+      "com.coder.workspace.name" = data.coder_workspace.me.name
+      "com.coder.user.id"        = data.coder_workspace_owner.me.id
+      "com.coder.user.username"  = data.coder_workspace_owner.me.name
+    }
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
+    }
+  }
+  wait_until_bound = false
+  spec {
+    access_modes = ["ReadWriteOnce"]
+    resources {
+      requests = {
+        storage = "1Gi"
+      }
+    }
+  }
+}
+
 resource "kubernetes_service" "sqlpad-service" {
   metadata {
     name      = "sqlpad-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
@@ -199,6 +239,9 @@ resource "kubernetes_deployment" "sqlpad" {
   }
   spec {
     replicas = 1
+    strategy {
+      type = "Recreate"
+    }
     selector {
       match_labels = {
         "app.kubernetes.io/name"     = "sqlpad-workspace"
@@ -220,6 +263,10 @@ resource "kubernetes_deployment" "sqlpad" {
         security_context {
           run_as_user = "1000"
           fs_group    = "1000"
+          run_as_non_root = true
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
         }
         container {
           name              = "sqlpad"
@@ -229,6 +276,15 @@ resource "kubernetes_deployment" "sqlpad" {
           security_context {
             run_as_user                = "1000"
             allow_privilege_escalation = false
+            capabilities {
+              drop = [
+                "ALL"
+              ]
+            }
+            run_as_non_root = true
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
           }
           env {
             name  = "CODER_AGENT_TOKEN"
@@ -288,6 +344,14 @@ resource "kubernetes_deployment" "sqlpad" {
               }
             }
           }
+          dynamic "env_from" {
+            for_each = var.extra_vars ? [1] : []
+            content {
+              config_map_ref {
+                name = "sqlpad-additional-env"
+              }
+            }
+          }
           resources {
             requests = {
               "cpu"    = "250m"
@@ -300,13 +364,17 @@ resource "kubernetes_deployment" "sqlpad" {
           }
           volume_mount {
             mount_path = "/var/lib/sqlpad"
-            name       = "home"
+            name       = "database"
+            sub_path   = "sqlpad"
             read_only  = false
           }
         }
         volume {
-          name = "home"
-          empty_dir {}
+          name = "database"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim.database.metadata.0.name
+            read_only  = false
+          }
         }
         affinity {
           pod_anti_affinity {

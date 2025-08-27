@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Delete all resources
 ---
 apiVersion: v1
@@ -22,9 +26,11 @@ metadata:
   labels:
     {{- include "digitalhub.labels" . | nindent 4 }}
 rules:
+{{- if or ( index .Values "postgres-operator" "databases" "coder" "enabled" ) ( index .Values "postgres-operator" "databases" "core" "enabled" ) ( index .Values "postgres-operator" "databases" "digitalhub" "enabled" ) }}
   - apiGroups: ["acid.zalan.do"]
     resources: ["postgresqls"]
     verbs: ["get", "list", "watch", "delete"]
+{{- end }}
   - apiGroups: [""]
     resources: ["services", "configmaps", "persistentvolumeclaims","pods"]
     verbs: ["get", "list", "watch", "delete"]
@@ -88,6 +94,7 @@ spec:
             readOnlyRootFilesystem: {{ .Values.jobs.delete.securityContext.readOnlyRootFilesystem }}
       restartPolicy: OnFailure
 ---
+{{- if or ( index .Values "postgres-operator" "databases" "coder" "enabled" ) ( index .Values "postgres-operator" "databases" "core" "enabled" ) ( index .Values "postgres-operator" "databases" "digitalhub" "enabled" ) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -116,6 +123,7 @@ spec:
             readOnlyRootFilesystem: {{ .Values.jobs.delete.securityContext.readOnlyRootFilesystem }}
       restartPolicy: OnFailure
 ---
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -146,7 +154,7 @@ spec:
 ---
 {{- $resource := list -}}
 {{- range $k, $v := .Values.global.cleanup }}
-{{- if $v }}
+{{- if and $v (ne $k "enabled") }}
 {{- $resource = append $resource $k -}}
 {{- end }}
 {{- end }}
@@ -154,7 +162,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: delete-pvc-ingress
+  name: delete-selected-resources
   annotations:
     "helm.sh/hook": post-delete
     "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation,hook-failed
@@ -164,15 +172,17 @@ metadata:
 spec:
   template:
     metadata:
-      name: delete-pvc-ingress
+      name: delete-selected-resources
       labels:
         {{- include "digitalhub.labels" . | nindent 8 }}
     spec:
       serviceAccountName: delete-resources
       containers:
-        - name: delete-pvc-ingress
+        - name: delete-selected-resources
           image: "bitnami/kubectl:latest"
           command: ["/bin/sh"]
           args: ["-c", "{{ range $resource }}kubectl -n {{ $.Release.Namespace }} delete --all {{ . }} && {{ end }} sleep 1m"]
+          securityContext:
+            {{- toYaml .Values.global.securityContext | nindent 12}}
       restartPolicy: OnFailure
 {{- end }}

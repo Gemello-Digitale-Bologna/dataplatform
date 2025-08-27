@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,8 +17,10 @@ spec:
       {{- include "digitalhub.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.dashboard.podAnnotations }}
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dashboard/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/dashboard/oidcconfig.yaml") . | sha256sum }}
+      {{- with .Values.dashboard.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
