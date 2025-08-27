@@ -1,227 +1,315 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+#  global -- Global values
 global:
+  #  global.externalHostAddress --
   externalHostAddress: ""
+  #  global.externalTls --
   externalTls: false
-storageClasses: default
-replicaCount: 1
-namespaceValues:
-  namespace: ""
-  defaultValue: "*"
 
-image:
-  repository: ghcr.io/scc-digitalhub/kubernetes-resource-manager
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+#  affinity -- Affinity for pod assignment.
+## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+affinity: {}
 
-imagePullSecrets: []
-nameOverride: ""
+#  autoscaling -- Adjusts the number of replicas in a workload to match observed resource utilization such as CPU or memory usage.
+autoscaling:
+  #  autoscaling.enabled -- Enable horizontal scaling
+  enabled: false
+  #  autoscaling.maxReplicas -- Set max replicas for autoscaling
+  maxReplicas: 100
+  #  autoscaling.minReplicas -- Set min replicas for autoscaling
+  minReplicas: 1
+  #  autoscaling.targetCPUUtilizationPercentage -- Set CPU utilization percentage that trigger the autoscaling
+  targetCPUUtilizationPercentage: 80
+
+#  env --
+env:
+  #  env.additionalEnv -- Additional variables that will be passed to KRM container
+  additionalEnv: {}
+
+#  fullnameOverride -- String to fully override `postgrest-operator.fullname` template.
 fullnameOverride: ""
 
-serviceAccount:
-  # Specifies whether a service account should be created
-  create: true
-  # Annotations to add to the service account
-  annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+#  image --
+image:
+  #  image.pullPolicy -- Image pull policy
+  pullPolicy: IfNotPresent
+  #  image.repository -- KRM container image repository.
+  repository: ghcr.io/scc-digitalhub/kubernetes-resource-manager
+  #  image.tag -- KRM container image tag.
+  tag: ""
 
-podAnnotations: {}
+#  imagePullSecrets -- Image pull secrets
+#  Optionally specify an array of imagePullSecrets.
+#  Secrets must be manually created in the namespace.
+#  ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
 
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 65532
-  runAsGroup: 65532
-  fsGroup: 65532
-
-rbac:
-  namespaced: true
-  clusterRole:
-    create: true
-  roles:
-    - apiGroups: "db.movetokube.com"
-      crd: true
-      resources:
-      - postgresusers
-      - postgres
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: "operator.dremiorestserver.com"
-      crd: true
-      resources:
-      - dremiorestservers
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: "operator.postgrest.org"
-      crd: true
-      resources:
-      - postgrests
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: "minio.scc-digitalhub.github.io"
-      crd: true
-      resources:
-      - buckets
-      - policies
-      - users
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: "operator.scc-digitalhub.github.io"
-      crd: true
-      resources:
-      - apigws
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: "batch"
-      crd: false
-      resources:
-      - jobs
-      verbs:
-      - get
-      - list
-      - delete
-    - apiGroups: "apps"
-      crd: false
-      resources:
-      - deployments
-      - replicasets
-      verbs:
-      - get
-      - list
-    - apiGroups: ""
-      crd: false
-      resources:
-      - persistentvolumeclaims
-      verbs:
-      - get
-      - list
-      - create
-      - delete
-      - patch
-    - apiGroups: ""
-      crd: false
-      resources:
-      - services
-      verbs:
-      - get
-      - list
-    - apiGroups: ""
-      crd: false
-      resources:
-      - secrets
-      verbs:
-      - get
-      - list
-    - apiGroups: ""
-      resources:
-      - "pods"
-      - "pods/log"
-      verbs:
-      - "get"
-      - "list"
-      - "create"
-
-securityContext:
-  runAsNonRoot: true
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-    - ALL
-
-service:
-  type: NodePort
-  port: 8080
-  nodePort: "30160"
-
+#  ingress --
 ingress:
+  #  ingress.enabled -- Enable/Disable ingress
   enabled: false
-  className: ""
+  #  ingress.annotations -- Ingress annotations (values are templated).
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  #  ingress.className -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18-
+  className: ""
+  #  ingress.hosts --
   hosts:
     - host: chart-example.local
       paths:
         - path: /
           pathType: ImplementationSpecific
+  #  ingress.tls -- Ingress TLS configuration.
   tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+#  nameOverride -- String to partially override `postgrest-operator.fullname` template (will maintain the release name)
+nameOverride: ""
 
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
+#  namespaceValues -- Configure operator scope clusterwide or namespaced.
+namespaceValues:
+  #  namespaceValues.defaultValue -- Enable/Disable Cluster wide mode.
+  defaultValue: "*"
+  #  namespaceValues.namespace -- Namespace name where operator watch for CR.
+  namespace: ""
 
+#  nodeSelector -- Node labels for pod assignment. Ref: https://kubernetes.io/docs/user-guide/node-selection/.
 nodeSelector: {}
 
-tolerations: []
-
-affinity: {}
-
+#  oidc -- OIDC authentication configuration
 oidc:
+  #  oidc.enabled -- Enable/Disable OIDC authentication
   enabled: false
+  #  oidc.access --
+  access:
+    #  oidc.access.roles --
+    roles: []
+  #  oidc.audience --
   audience:
+    #  oidc.audience.clientId -- OIDC provider client ID
     clientId: ""
+    #  oidc.audience.externalSecret -- Read client ID from existing secrets
     externalSecret:
-      name: ""
+      #  oidc.audience.externalSecret.key -- Existing secret key
       key: ""
-  issuer: ""
-  scope: ""
+      #  oidc.audience.externalSecret.name -- Existing secret name
+      name: ""
+  #  oidc.authType --
   authType: ""
+  #  oidc.issuer -- OIDC issuer
+  issuer: ""
+  #  oidc.redirectUrl -- OIDC issuer
   redirectUrl: ""
+  #  oidc.roleClaim -- OIDC role claim
+  roleClaim: ""
+  #  oidc.scope -- OIDC scope
+  scope: ""
 
+#  podAnnotations -- Annotations to add to each pod.
+podAnnotations: {}
+
+#  podSecurityContext -- Pod security context options
+podSecurityContext:
+  #  podSecurityContext.fsGroup -- Configure group id used to mount volumes
+  fsGroup: 65532
+  #  podSecurityContext.runAsGroup -- Run pod containers as specified group
+  runAsGroup: 65532
+  #  podSecurityContext.runAsNonRoot -- Permit pod containers to run as root
+  runAsNonRoot: true
+  #  podSecurityContext.runAsUser -- Run pod containers as specified user
+  runAsUser: 65532
+  #  podSecurityContext.seccompProfile -- Pod configure seccompProfile.
+  seccompProfile:
+    #  podSecurityContext.seccompProfile.type -- Pod configure seccompProfile type.
+    type: RuntimeDefault
+
+#  rbac -- RBAC configuration for kubernetes and KRM
+rbac:
+  #  rbac.clusterRole -- Role configuration
+  clusterRole:
+    #  rbac.clusterRole.create -- Create cluster role
+    create: true
+  #  rbac.namespaced -- Create namespaced cluster role
+  namespaced: true
+  #  rbac.roles -- Define roles for KRM service account and template crd.allowed list for KRM.
+  #  kubernetes.crd.allowed and kubernetes.crd.denied are meant to be mutually exclusive:
+  #  you either specify one or the other (or leave both empty).
+  #  Defining allowed will let the resource manager handle only the CRDs listed in it, while denied will allow all CRDs not listed in it. Leaving both empty lets the resource manager handle all CRDs.
+  roles:
+    - apiGroups: db.movetokube.com
+      crd: true
+      resources:
+        - postgresusers
+        - postgres
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: operator.dremiorestserver.com
+      crd: true
+      resources:
+        - dremiorestservers
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: operator.postgrest.org
+      crd: true
+      resources:
+        - postgrests
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: minio.scc-digitalhub.github.io
+      crd: true
+      resources:
+        - buckets
+        - policies
+        - users
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: operator.scc-digitalhub.github.io
+      crd: true
+      resources:
+        - apigws
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: batch
+      crd: false
+      resources:
+        - jobs
+      verbs:
+        - get
+        - list
+        - delete
+    - apiGroups: apps
+      crd: false
+      resources:
+        - deployments
+        - replicasets
+      verbs:
+        - get
+        - list
+    - apiGroups: ""
+      crd: false
+      resources:
+        - persistentvolumeclaims
+      verbs:
+        - get
+        - list
+        - create
+        - delete
+        - patch
+    - apiGroups: ""
+      crd: false
+      resources:
+        - services
+      verbs:
+        - get
+        - list
+    - apiGroups: ""
+      crd: false
+      resources:
+        - secrets
+      verbs:
+        - get
+        - list
+    - apiGroups: ""
+      resources:
+        - pods
+        - pods/log
+      verbs:
+        - get
+        - list
+        - create
+    - apiGroups: ""
+      resources:
+        - resourcequotas
+      verbs:
+        - get
+        - list
+
+#  replicaCount -- Desired number of pods.
+replicaCount: 1
+
+#  resourceSelectors -- Configure the resources that you want to see in your KRM instance
 resourceSelectors:
-  # list separated by |
-  services: "app.kubernetes.io/type=service|nuclio.io/class=function|app.kubernetes.io/managed-by=postgrest-operator|app.kubernetes.io/managed-by=dremiorestserver-operator|com.coder.resource=true|app.kubernetes.io/managed-by=dhcore"
-  # list separated by |
-  deployments: "app.kubernetes.io/managed-by=postgrest-operator|app.kubernetes.io/managed-by=dremiorestserver-operator|app.kubernetes.io/type=workspace|app.kubernetes.io/managed-by=dhcore"
-  # list separated by |
-  jobs: "app.kubernetes.io/managed-by=dhcore"
+  #  resourceSelectors.deployments -- Selector label for Deployments objects
+  deployments: app.kubernetes.io/managed-by=postgrest-operator|app.kubernetes.io/managed-by=dremiorestserver-operator|app.kubernetes.io/type=workspace|app.kubernetes.io/managed-by=dhcore
+  #  resourceSelectors.jobs -- Selector label for Jobs objects
+  jobs: app.kubernetes.io/managed-by=dhcore
+  #  resourceSelectors.pvcs -- Selector label for PVC objects
   pvcs:
-    # list separated by |
-    labels: "app.kubernetes.io/managed-by=krm"
-    # string
-    managedBy: "krm"
+    #  resourceSelectors.pvcs.labels --
+    labels: app.kubernetes.io/managed-by=krm
+    #  resourceSelectors.pvcs.managedBy --
+    managedBy: krm
+  #  resourceSelectors.secrets --
   secrets:
-    # list separated by |
+    #  resourceSelectors.secrets.labels -- Selector label for Secrets objects
     labels: ""
-    # list separated by ,
-    owners: "db.movetokube.com/v1alpha1"
-    # list separated by ,
-    names: "(digitalhub\\-owner|digitalhub\\-reader|digitalhub\\-writer).*"
+    #  resourceSelectors.secrets.names --
+    names: (digitalhub\-owner|digitalhub\-reader|digitalhub\-writer).*
+    #  resourceSelectors.secrets.owners --
+    owners: db.movetokube.com/v1alpha1
+  #  resourceSelectors.services -- Selector label for Services objects
+  services: app.kubernetes.io/type=service|app.kubernetes.io/managed-by=postgrest-operator|app.kubernetes.io/managed-by=dremiorestserver-operator|com.coder.resource=true|app.kubernetes.io/managed-by=dhcore
+
+#  resources -- Pod resource requests and limits.
+resources: {}
+
+#  securityContext -- [Security context for pod](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/)
+securityContext:
+  #  securityContext.allowPrivilegeEscalation -- Container allow privilege escalation.
+  allowPrivilegeEscalation: false
+  #  securityContext.capabilities -- Container configure capabilities.
+  capabilities:
+    #  securityContext.capabilities.drop -- Container drop capabilities.
+    drop:
+      - ALL
+  #  securityContext.runAsNonRoot -- Pod allow run as root.
+  runAsNonRoot: true
+  #  securityContext.seccompProfile --
+  seccompProfile:
+    #  securityContext.seccompProfile.type -- Pod configure seccompProfile type.
+    type: RuntimeDefault
+
+#  service --
+service:
+  #  service.nodePort -- Set the port number when service type is NodePort
+  nodePort: "30160"
+  #  service.port -- Service port.
+  port: 8080
+  #  service.type -- Service Type
+  type: NodePort
+
+#  serviceAccount --
+serviceAccount:
+  #  serviceAccount.annotations -- Additional Service Account annotations.
+  annotations: {}
+  #  serviceAccount.create -- If `true` a Service Account will be created.
+  create: true
+  #  serviceAccount.name -- Service account name.
+  name: ""
+
+#  storageClasses -- PVC storage class
+storageClasses: default
+
+#  tolerations -- List of node taints to tolerate (requires Kubernetes >= 1.6).
+tolerations: []

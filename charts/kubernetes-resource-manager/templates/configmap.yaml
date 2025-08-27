@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,6 +20,13 @@ data:
   K8S_SELECTOR_LABELS: {{ .Values.resourceSelectors.secrets.labels | quote}}
   K8S_SELECTOR_NAMES: {{ .Values.resourceSelectors.secrets.names | quote}}
   KRM_AUTH_OAUTH2_ISSUER: {{ .Values.oidc.issuer }}
+  KRM_AUTH_OAUTH2_ROLE_CLAIM: {{ .Values.oidc.roleClaim }}
   KRM_AUTH_OAUTH2_SCOPES: {{ .Values.oidc.scope }}
   AUTH_TYPE: {{ .Values.oidc.authType }}
   REDIRECT_URL: {{ .Values.oidc.redirectUrl }}
+  {{- if .Values.env.additionalEnv }}
+  {{- toYaml .Values.env.additionalEnv | nindent 2}}
+  {{- end }}
+  {{- if and .Values.oidc.enabled .Values.oidc.access.roles }}
+  {{- include "kubernetes-resource-manager.roles" . }}
+  {{- end }}
