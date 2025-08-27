@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,8 +17,10 @@ spec:
       {{- include "aac.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
@@ -114,15 +120,25 @@ spec:
               protocol: TCP
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+          {{- if and .Values.keystore.secretName .Values.config.keystorePath }}
+            - name: keystore
+              mountPath: "{{ .Values.config.keystorePath }}/{{ .Values.keystore.keyName }}"
+              subPath: {{ .Values.keystore.keyName }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           envFrom:
           - configMapRef:
               name: {{ include "aac.fullname" . }}
-      {{- with .Values.volumes }}
       volumes:
+      {{- if .Values.keystore.secretName }}
+        - name: keystore
+          secret:
+            secretName: {{ .Values.keystore.secretName }}
+      {{- end }}
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
