@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,8 +17,9 @@ spec:
       {{- include "postgrest-operator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
@@ -29,7 +34,7 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "postgrest-operator.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.deployment.securityContext | nindent 8 }}
+        {{- toYaml .Values.deployment.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: 10
       containers:
         - name: {{ .Values.deployment.kubeRbacProxy.name }}
