@@ -1,0 +1,129 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+{{ if .Values.sts.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "core.fullname" . }}-sts
+  labels:
+    {{- include "core-sts.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.sts.autoscaling.enabled }}
+  replicas: {{ .Values.sts.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "core-sts.selectorLabels" . | nindent 6 }}
+  template:
+    metadata: 
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/sts/configmap.yaml") . | sha256sum }}
+      {{- with .Values.sts.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "core-sts.labels" . | nindent 8 }}
+        {{- with .Values.sts.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.sts.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "core.serviceAccountName" . }}-sts
+      securityContext:
+        {{- toYaml .Values.sts.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}-sts
+          securityContext:
+            {{- toYaml .Values.sts.securityContext | nindent 12 }}
+          image: "{{ .Values.sts.image.repository }}:{{ .Values.sts.image.tag }}"
+          imagePullPolicy: {{ .Values.sts.image.pullPolicy }}
+          env:
+            - name: STS_CLIENT_ID
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.clientIdKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.client.existingSecret.name }}
+                  key: {{ .Values.sts.client.existingSecret.clientIdKey }}
+              {{- else }}
+              value: {{ .Values.sts.client.clientId }}
+              {{- end }}
+            - name: STS_CLIENT_SECRET
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.clientSecretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.client.existingSecret.name }}
+                  key: {{ .Values.sts.client.existingSecret.clientSecretKey}}
+              {{- else }}
+              value: {{ .Values.sts.client.clientSecret }}
+              {{- end }}
+            - name: CONNECTION_USER
+              {{- if and .Values.sts.databaseProvider.credentials.existingSecret.name .Values.sts.databaseProvider.credentials.existingSecret.usernameKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.databaseProvider.credentials.existingSecret.name }}
+                  key: {{ .Values.sts.databaseProvider.credentials.existingSecret.usernameKey }}
+              {{- else }}
+              value: {{ .Values.sts.databaseProvider.credentials.username }}
+              {{- end }}
+            - name: CONNECTION_PASS
+              {{- if and .Values.sts.databaseProvider.credentials.existingSecret.name .Values.sts.databaseProvider.credentials.existingSecret.passwordKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.databaseProvider.credentials.existingSecret.name }}
+                  key: {{ .Values.sts.databaseProvider.credentials.existingSecret.passwordKey }}
+              {{- else }}
+              value: {{ .Values.sts.databaseProvider.credentials.password }}
+              {{- end }}
+            - name: JDBC_USER
+              {{- if and .Values.sts.stsDb.credentials.existingSecret.name .Values.sts.stsDb.credentials.existingSecret.usernameKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.stsDb.credentials.existingSecret.name }}
+                  key: {{ .Values.sts.stsDb.credentials.existingSecret.usernameKey }}
+              {{- else }}
+              value: {{ .Values.sts.stsDb.credentials.username }}
+              {{- end }}
+            - name: JDBC_PASS
+              {{- if and .Values.sts.stsDb.credentials.existingSecret.name .Values.sts.stsDb.credentials.existingSecret.passwordKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sts.stsDb.credentials.existingSecret.name }}
+                  key: {{ .Values.sts.stsDb.credentials.existingSecret.passwordKey }}
+              {{- else }}
+              value: {{ .Values.sts.stsDb.credentials.password }}
+              {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sts.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.sts.resources | nindent 12 }}
+          envFrom:
+          - configMapRef:
+              name: {{ include "core.fullname" . }}-sts
+          {{- with .Values.sts.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.sts.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sts.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sts.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sts.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

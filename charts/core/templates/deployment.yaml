@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,8 +17,10 @@ spec:
       {{- include "core.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
@@ -35,8 +41,18 @@ spec:
         - name: wait-solr
           image: {{ .Values.solr.collection.initialize.image }}
           command: ["/bin/sh", "-c"]
-          args: 
+          args:
+          {{- if not .Values.solr.collection.initialize.enabled }}
             - until [ "$(curl -s -w '%{http_code}' -o /dev/null "{{ .Values.solr.url }}/admin/info/health")" -eq 200 ]; do echo "waiting for solr to be ready"; sleep 5; done
+          {{- else }}
+            - until [ "$(curl --user admin:$SOLR_ADMIN_PWD -s -w '%{http_code}' -o /dev/null "{{ .Values.solr.url }}/admin/info/health")" -eq 200 ]; do echo "waiting for solr to be ready"; sleep 5; done
+          env:
+            - name: "SOLR_ADMIN_PWD"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.solr.collection.initialize.securityJsonSecret }}
+                  key: admin
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
       {{- end }}
@@ -47,58 +63,83 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: DH_S3_ACCESS_KEY_ID
+          {{- if .Values.sts.enabled }}
+            - name: DB_CREDENTIALS_USER
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.usernameKey }}
               valueFrom:
                 secretKeyRef:
-                  name: digitalhub-minio-creds
-                  key: digitalhubUser
-            - name: DH_S3_SECRET_ACCESS_KEY
+                  name: {{ .Values.sts.client.existingSecret.name }}
+                  key: {{ .Values.sts.client.existingSecret.clientIdKey }}
+              {{- else }}
+              value: {{ .Values.sts.client.clientId }}
+              {{- end }}
+            - name: DB_CREDENTIALS_PASSWORD
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.passwordKey }}
               valueFrom:
                 secretKeyRef:
-                  name: digitalhub-minio-creds
-                  key: digitalhubPassword
-            - name: DH_AWS_ACCESS_KEY_ID
+                  name: {{ .Values.sts.client.existingSecret.name }}
+                  key: {{ .Values.sts.client.existingSecret.clientSecretKey}}
+              {{- else }}
+              value: {{ .Values.sts.client.clientSecret }}
+              {{- end }}
+          {{- end }}
+          {{- if .Values.s3.dynamicCreds.enabled }}
+            - name: MINIO_CREDENTIALS_ACCESS_KEY
+            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.accessKeyKey }}
               valueFrom:
                 secretKeyRef:
-                  name: digitalhub-minio-creds
-                  key: digitalhubUser
-            - name: DH_AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: digitalhub-minio-creds
-                  key: digitalhubPassword
-            - name: DH_POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do
-                  key: username
-            - name: DH_POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do
-                  key: password
-            - name: JDBC_USER
-              valueFrom:
-                secretKeyRef:
-                  name: coreuser.core-postgres-cluster.credentials.postgresql.acid.zalan.do
-                  key: username
-            - name: JDBC_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: coreuser.core-postgres-cluster.credentials.postgresql.acid.zalan.do
-                  key: password
-            {{- if and .Values.events.enabled .Values.events.rabbitmq.enabled }}
-            - name: RABBITMQ_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.events.rabbitmq.credentials.existingSecret.name | default (printf "%s-rabbitmq-creds" (include "core.fullname" .)) }}
-                  key: {{ .Values.events.rabbitmq.credentials.existingSecret.usernameKey | default "username" }}
-            - name: RABBITMQ_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.events.rabbitmq.credentials.existingSecret.name | default (printf "%s-rabbitmq-creds" (include "core.fullname" .)) }}
-                  key: {{ .Values.events.rabbitmq.credentials.existingSecret.passwordKey | default "password" }}
+                  name: {{ .Values.s3.existingSecret.name }}
+                  key: {{ .Values.s3.existingSecret.accessKeyKey }}
+            {{- else }}
+              value: {{ .Values.s3.accessKey }}
             {{- end }}
+            - name: MINIO_CREDENTIALS_SECRET_KEY
+            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.secretKeyKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret.name }}
+                  key: {{ .Values.s3.existingSecret.secretKeyKey }}
+            {{- else }}
+              value: {{ .Values.s3.secretKey }}
+            {{- end }}
+          {{- else }}
+            - name: AWS_ACCESS_KEY
+            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.accessKeyKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret.name }}
+                  key: {{ .Values.s3.existingSecret.accessKeyKey }}
+            {{- else }}
+              value: {{ .Values.s3.secretKey }}
+            {{- end }}
+            - name: AWS_SECRET_KEY
+            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.secretKeyKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret.name }}
+                  key: {{ .Values.s3.existingSecret.secretKeyKey }}
+            {{- else }}
+              value: {{ .Values.s3.secretKey }}
+            {{- end }}
+          {{- end }}
+            - name: JDBC_USER
+              {{- if and .Values.postgres.credentials.existingSecret.name .Values.postgres.credentials.existingSecret.usernameKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.credentials.existingSecret.name }}
+                  key: {{ .Values.postgres.credentials.existingSecret.usernameKey }}
+              {{- else }}
+              value: {{ .Values.postgres.credentials.username }}
+              {{- end }}
+            - name: JDBC_PASS
+              {{- if and .Values.postgres.credentials.existingSecret.name .Values.postgres.credentials.existingSecret.passwordKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.credentials.existingSecret.name }}
+                  key: {{ .Values.postgres.credentials.existingSecret.passwordKey }}
+              {{- else }}
+              value: {{ .Values.postgres.credentials.password }}
+              {{- end }}
             {{- if .Values.authentication.openId.enabled }}
             - name: DH_AUTH_OIDC_CLIENT_ID
               {{- if .Values.authentication.openId.externalSecret.name  }}
@@ -110,6 +151,23 @@ spec:
               value: {{ .Values.authentication.openId.oidcClientId }}
               {{- end }}
             {{- end }}
+            - name: JWT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: core-auth-creds
+                  key: clientId
+            - name: JWT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: core-auth-creds
+                  key: clientSecret
+            {{- if .Values.solr.collection.initialize.enabled }}
+            - name: SOLR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.solr.collection.initialize.securityJsonSecret }}
+                  key: user
+            {{- end }}
           envFrom:
           - configMapRef:
               name: {{ include "core.fullname" . }}
@@ -119,12 +177,22 @@ spec:
               protocol: TCP
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+          {{- if and .Values.keystore.existingSecret.secretName .Values.keystore.keystorePath }}
+            - name: keystore
+              mountPath: "{{ .Values.keystore.keystorePath }}/{{ .Values.keystore.existingSecret.keyName }}"
+              subPath: {{ .Values.keystore.existingSecret.keyName }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
       volumes:
+      {{- if and .Values.keystore.existingSecret.secretName .Values.keystore.keystorePath }}
+        - name: keystore
+          secret:
+            secretName: {{ .Values.keystore.existingSecret.secretName }}
+      {{- end }}
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}

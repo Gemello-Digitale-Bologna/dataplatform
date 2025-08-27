@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+{{ if .Values.sts.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "core.fullname" . }}-sts
+data:
+  CONNECTION_URL: {{ printf "%s%s:%s/%s" "jdbc:postgresql://" .Values.databaseProvider.host .Values.databaseProvider.port .Values.databaseProvider.database | quote }}
+  POSTGRES_DATABASE: {{ .Values.databaseProvider.database }}
+  STS_ENDPOINT: http://{{ include "core.fullname" . }}-sts:{{ .Values.service.port }}
+  STS_CREDENTIALS_ROLES: {{ .Values.sts.credentials.roles }}
+  STS_JWT_AUDIENCE: {{ .Values.sts.jwt.audience }}
+  STS_JWT_CLAIM: {{ .Values.sts.jwt.claim }}
+  STS_JWT_ISSUER_URI: {{ .Values.sts.jwt.issuerUri }}
+  JDBC_PLATFORM: {{ .Values.sts.stsDb.platform }}
+  JDBC_DRIVER: {{ .Values.sts.stsDb.driver }}
+  JDBC_URL: {{ printf "%s%s:%s/%s" "jdbc:postgresql://" .Values.sts.stsDb.host .Values.sts.stsDb.port .Values.sts.stsDb.database | quote }}
+{{- end }}
