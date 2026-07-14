@@ -8,17 +8,17 @@ global:
   externalHostAddress: ""
   #  global.externalTls --
   externalTls: false
-  #  global.registry -- Values of your registry
-  registry:
-    #  global.registry.email -- Registry email
+  #  global.ociRegistry -- Values of your registry
+  ociRegistry:
+    #  global.ociRegistry.email -- Registry email
     email: ""
-    #  global.registry.password -- Registry password
+    #  global.ociRegistry.password -- Registry password
     password: ""
-    #  global.registry.secretName -- Name of the secret of your registry. It has higher priority.
+    #  global.ociRegistry.secretName -- Name of the secret of your registry. It has higher priority.
     secretName: ""
-    #  global.registry.url -- Registry url
+    #  global.ociRegistry.url -- Registry url
     url: ""
-    #  global.registry.username -- Registry username
+    #  global.ociRegistry.username -- Registry username
     username: ""
 
 #  additionalConfig --
@@ -29,12 +29,32 @@ additionalConfig:
     enableLogs: true
     #  additionalConfig.debug.enableMetrics -- Enable/disable metrics
     enableMetrics: false
+  #  additionalConfig.ephemeralVolume -- Ephemeral Volumes configurations
+  ephemeralVolume:
+    # additionalConfig.ephemeral.limits -- Configure max size for the ephemeral storage volumes
+    limits: ""
+    # additionalConfig.ephemeral.requests -- Configure the default size for all ephemeral storage volumes can be overrided by users
+    requests: ""
+    # additionalConfig.ephemeral.storageClass -- Specify the storage class for ephemeral storage
+    storageClass: ""
+  #  additionalConfig.image --
+  image:
+    # additionalConfig.image.pullPolicy -- Configure pull image pull policy for workload scheduled by core
+    pullPolicy: IfNotPresent
   #  additionalConfig.job -- Jobs configuration
   job:
     #  additionalConfig.job.deadline -- Set deadline for jobs
     deadline: "604800"
     #  additionalConfig.job.jobSuspend -- Suspend jobs
     jobSuspend: false
+  #  additionalConfig.persistenVolumeClaim -- Persisten Volume Claim configurations
+  persistenVolumeClaim:
+    # additionalConfig.persistenVolumeClaim.limits -- Configure max size for the Persisten Volume Claim volumes
+    limits: ""
+    # additionalConfig.persistenVolumeClaim.requests -- Configure the default size for all Persisten Volume Claim volumes can be overrided by users
+    requests: ""
+    # additionalConfig.persistenVolumeClaim.storageClass -- Specify the storage class for Persisten Volume Claim
+    storageClass: ""
   #  additionalConfig.resources -- Resources for the pods created by Core
   resources:
     #  additionalConfig.resources.cpuLim -- CPU limit
@@ -47,10 +67,6 @@ additionalConfig:
     memLim: ""
     #  additionalConfig.resources.memReq -- Memory request
     memReq: ""
-    #  additionalConfig.resources.pvcLim -- PVC storage limit
-    pvcLim: ""
-    #  additionalConfig.resources.pvcReq -- PVC storage request
-    pvcReq: ""
   #  additionalConfig.security --
   security:
     #  additionalConfig.security.disableRoot -- Disable root for pods created by Core
@@ -59,6 +75,14 @@ additionalConfig:
   service:
     #  additionalConfig.service.type -- Service type for pods created by Core
     type: NodePort
+  #  additionalConfig.workflowVolume -- Workflow configuration
+  workflow:
+    #  additionalConfig.workflow.volume -- Workflow volume configuration
+    volume:
+      #  additionalConfig.workflow.volume.accessMode -- Access mode for the workflow volume
+      accessMode: ReadWriteMany
+      # additionalConfig.workflowVolume.storageClassName -- Specify the storage class for the workflow volume
+      storageClassName: ""
 
 #  affinity -- Affinity for pod assignment.
 affinity: {}
@@ -118,6 +142,39 @@ autoscaling:
   #  autoscaling.targetCPUUtilizationPercentage -- Set CPU utilization percentage that trigger the autoscaling
   targetCPUUtilizationPercentage: 80
 
+#  builder -- Configure OCI image builder
+builder:
+  framework:
+    #  builder.framework.args -- Override/append arguments defined in the builder image
+    args: ""
+    #  builder.framework.client-secret -- Specify mTLS client secret used by buildkit cli to authenticate to a remote buildkit deamon
+    client-secret:
+      #  builder.framework.client-secret.mount-path: -- Mount path where the certificates are mounted inside the container
+      mount-path: ""
+      #  builder.framework.client-secret.name -- Client certificate secret name
+      name: ""
+    #  builder.framework.command -- Override command defined in the builder image
+    command: ""
+    #  builder.framework.image -- Set builder image
+    image: gcr.io/kaniko-project/executor:latest
+    #  builder.framework.image-prefix -- Sets the prefix that will be added to the image name
+    image-prefix: ""
+    #  builder.framework.name -- Configure which builder use to build OCI image (kaniko or buildkit)
+    name: kaniko
+    #  builder.framework.secret -- Specify the name of the secret that contains the registry credentials
+    secret: ""
+
+#  commonCredsSecret -- A secret that should be used when not using STS. It should contain the following populated keys:
+#  DB_USERNAME: Username of the Postgres main db owner
+#  DB_PASSWORD: Password of the Postgres main db owner
+#  AWS_ACCESS_KEY_ID: Access key of the S3 Platform's main bucket user
+#  AWS_SECRET_ACCESS_KEY: Secret key of the S3 Platform's main bucket user
+#  DB_URL: Connection string to the platform's main db
+#  DHCORE_CLIENT_ID: Core clientId
+commonCredsSecret:
+  #  commonCredsSecret.existingCommonCredsSecret -- Secret name
+  secretName: ""
+
 #  configmapAdditionalEnv -- Additional environment variables for the Core configmap, MUST be specified in key/value format
 configmapAdditionalEnv: {}
 
@@ -127,6 +184,14 @@ coreAuthCreds:
   clientId: ""
   #  coreAuthCreds.clientSecret -- Core clientSecret
   clientSecret: ""
+  #  coreAuthCreds.existingSecret -- Existing secret containing Core clientID and clientSecret
+  existingSecret:
+    #  coreAuthCreds.existingSecret.clientIdKey -- Key of the clientID
+    clientIdKey: ""
+    #  coreAuthCreds.existingSecret.clientSecretKey -- Key of the clientSecret
+    clientSecretKey: ""
+    #  coreAuthCreds.existingSecret.secretName -- Name of the secret with Core clientId and clientSecret
+    secretName: ""
 
 #  coreTokens --
 coreTokens:
@@ -152,6 +217,39 @@ defaultStorageClass: ""
 
 #  fullnameOverride -- String to fully override `core.fullname` template.
 fullnameOverride: ""
+
+#  healthcheck -- Core healthcheck configuration
+healthcheck:
+  #  healthcheck.enabled -- Enable/Disable healthcheck for Core
+  enabled: true
+  #  healthcheck.livenessProbe -- Liveness probe for Core
+  livenessProbe:
+    #  healthcheck.livenessProbe.path -- Handler path for liveness probe
+    path: /health
+    #  healthcheck.livenessProbe.periodSeconds -- Period seconds for liveness probe
+    periodSeconds: 60
+  #  healthcheck.livenessProbe -- Liveness probe for Core
+  readinessProbe:
+    #  healthcheck.readinessProbe.path -- Handler path for readiness probe
+    path: /health
+    #  healthcheck.readinessProbe.periodSeconds -- Period seconds for readiness probe
+    periodSeconds: 60
+  #  healthcheck.service -- Service configuration for healthcheck.
+  service:
+    #  healthcheck.service.port -- Port used by healthcheck service
+    port: 8081
+    #  healthcheck.service.portName -- Port name used by healthcheck service
+    portName: management
+    #  healthcheck.service.protocol -- Protocol used by healthcheck service
+    protocol: TCP
+  #  healthcheck.startupProbe -- Startup probe for Core
+  startupProbe:
+    #  healthcheck.startupProbe.failureThreshold -- Failure threshold for startup probe
+    failureThreshold: 12
+    #  healthcheck.startupProbe.path -- Handler path for startup probe
+    path: /health
+    #  healthcheck.startupProbe.periodSeconds -- Period seconds for startup probe
+    periodSeconds: 10
 
 #  image --
 image:
@@ -189,10 +287,7 @@ initImage:
     #  initImage.builderTool.image -- Cpre builder repository
     image: ghcr.io/scc-digitalhub/digitalhub-core-builder-tool
     #  initImage.builderTool.tag -- Core builder tag
-    tag: b95c095f
-
-#  kanikoArgs --
-kanikoArgs: ""
+    tag: 5b6f4347
 
 #  keystore --
 keystore:
@@ -216,12 +311,22 @@ kubeai:
   #  kubeai.serviceName -- Kubei service name
   serviceName: ""
 
-#  lucene --
+#  lucene -- Values for Lucene configuration
 lucene:
   #  lucene.indexPath -- Set the path for Lucene and enables it
-  indexPath: false
+  indexPath: "/lucene/"
+  #  lucene.persistence -- Lucene persistence configuration
+  persistence:
+    #  lucene.persistence.enabled -- Enable persistence for Lucene
+    enabled: true
+    #  lucene.persistence.accessMode -- Access mode for the Lucene persistent volume claim
+    accessMode: ReadWriteOnce
+    #  lucene.persistence.size -- Size for the Lucene persistent volume claim
+    size: 10Gi
+    #  lucene.persistence.storageClass -- Storage class for the Lucene persistent volume claim
+    storageClass: ""
   #  lucene.reindex -- Reindex of Lucene
-  reindex: never
+  reindex: always
 
 #  nameOverride -- String to partially override `core.fullname` template (will maintain the release name)
 nameOverride: ""
@@ -237,6 +342,8 @@ podLabels: {}
 
 #  podSecurityContext -- [Security context for pod](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/)
 podSecurityContext:
+  #  podSecurityContext.fsGroup -- Configure group id used to mount volumes
+  fsGroup: 65532
   #  podSecurityContext.runAsNonRoot -- Pod allow run as root.
   runAsNonRoot: true
   #  podSecurityContext.seccompProfile -- Pod configure seccompProfile.
@@ -269,6 +376,9 @@ postgres:
   #  postgres.schema -- Schema of the Core database
   schema: ""
 
+# priorityClassName -- Name of the priority class, leave empty to not set any.
+priorityClassName: ""
+
 #  registry --
 registry:
   #  registry.kaniko --
@@ -284,15 +394,15 @@ resources:
   #  resources.limits --
   limits:
     #  resources.limits.cpu -- Max cpu request
-    cpu: 1000m
+    cpu: 2000m
     #  resources.limits.memory -- Max memory request
-    memory: 512Mi
+    memory: 2048Mi
   #  resources.requests --
   requests:
     #  resources.requests.cpu -- Min cpu request
     cpu: 200m
     #  resources.requests.memory -- Max cpu request
-    memory: 256Mi
+    memory: 512Mi
 
 #  runtime --
 runtime:
@@ -301,7 +411,12 @@ runtime:
     #  runtime.dbt.image -- DBT wrapper repository
     image: ghcr.io/scc-digitalhub/digitalhub-sdk-wrapper-dbt/wrapper-dbt
     #  runtime.dbt.tag -- DBT wrapper tag
-    tag: 0.12.0
+    tag: 0.14.3
+  hera:
+    #  runtime.hera.image -- hera wrapper repository
+    image: ghcr.io/scc-digitalhub/digitalhub-sdk-wrapper-hera/wrapper-hera
+    #  runtime.hera.tag -- hera wrapper tag
+    tag: 0.14.3
   #  runtime.huggingFace --
   huggingFace:
     #  runtime.huggingFace.image -- HuggingFaceServer repository
@@ -313,42 +428,57 @@ runtime:
     #  runtime.kfp.image -- KFP wrapper repository
     image: ghcr.io/scc-digitalhub/digitalhub-sdk-wrapper-kfp/wrapper-kfp
     #  runtime.kfp.tag -- KFP wrapper tag
-    tag: 0.12.0
+    tag: 0.14.3
   #  runtime.python --
   python:
     #  runtime.python.image -- Python runtime repository
     image: ghcr.io/scc-digitalhub/digitalhub-serverless/python-runtime
     #  runtime.python.tag3_10 -- Python runtime 3.10  tag
-    tag3_10: 3.10-0.12.0
+    tag3_10: 3.10-0.14.3
     #  runtime.python.tag3_11 -- Python runtime 3.11 tag
-    tag3_11: 3.11-0.12.0
+    tag3_11: 3.11-0.14.3
+    #  runtime.python.tag3_12 -- Python runtime 3.12 tag
+    tag3_12: 3.12-0.14.3
     #  runtime.python.tag3_9 -- Python runtime 3.9 tag
-    tag3_9: 3.9-0.12.0
+    tag3_9: 3.9-0.14.3
 
 #  s3 --
 s3:
   # s3.enabled -- Enable this option if you have an S3 deployment that you want to use with Core
   enabled: false
-  #  s3.accessKey -- Explicit declaration of the Access key of your S3 instance.
-  #  It has lower priority than the corresponding secret values.
-  accessKey: ""
   #  s3.bucket -- Bucket of your S3 instance
   bucket: ""
-  #  s3.dynamicCreds --
-  dynamicCreds:
-    #  s3.dynamicCreds.enabled -- Set this to true if you want to use dynamic credentials for S3 communication
-    enabled: false
+  #  s3.credentials -- S3 credentials configuration
+  credentials:
+    #  s3.credentials.accessKey -- Explicit declaration of the Access key of your S3 instance.
+    #  It has lower priority than the corresponding secret values.
+    accessKey: ""
+    #  s3.credentials.claimPrefix -- Prefix for the claims related to S3 credentials
+    claimPrefix: ""
+    #  s3.credentials.duration -- Duration in seconds for the credentials.
+    duration: "3600"
+    #  s3.credentials.existingSecret -- Reference to the secret containing AccessKey and Secret key of your S3 instance.
+    #  These values have higher priority than the explicit declarations.
+    existingSecret:
+      #  s3.credentials.existingSecret.accessKeyKey -- Key corresponding to your accessKey in your secret
+      accessKeyKey: ""
+      #  s3.credentials.existingSecret.name -- Secret containing accessKey and secretKey of your s3 instance
+      name: ""
+      #  s3.credentials.existingSecret.secretKeyKey -- Key corresponding to your secretKey in your secret
+      secretKeyKey: ""
+    #  s3.credentials.policy -- Policy that the credentials for S3 operations will have.
+    #  It should be a JSON string in-line.
+    policy: ""
+    #  s3.credentials.roleArn -- Role ARN to assume to get access to the S3 instance.
+    roleArn: ""
+    #  s3.credentials.secretKey -- Explicit declaration of the Secret key of your S3 instance.
+    #  It has lower priority than the corresponding secret values.
+    secretKey: ""
   #  s3.endpoint -- Endpoint of your S3 instance
   endpoint: ""
-  #  s3.existingSecret -- Reference to the secret containing AccessKey and Secret key of your S3 instance.
-  #  These values have higher priority than the explicit declarations.
-  existingSecret:
-    #  s3.existingSecret.accessKeyKey -- Key corresponding to your accessKey in your secret
-    accessKeyKey: ""
-    #  s3.existingSecret.name -- Secret containing accessKey and secretKey of your s3 instance
-    name: ""
-    #  s3.existingSecret.secretKeyKey -- Key corresponding to your secretKey in your secret
-    secretKeyKey: ""
+  #  s3.pathStyleAccess -- Whether to use path style access for S3 operations.
+  #  Set this to true if your S3 instance is any non AWS provider that requires path style access.
+  pathStyleAccess: true
   #  s3.port -- Port of your S3 instance
   port: ""
   #  s3.protocol -- Protocol of your S3 instance (http/https)
@@ -356,10 +486,9 @@ s3:
   #  s3.publicUrl -- Public url of your S3 instance
   publicUrl: ""
   #  s3.region -- Region used by your S3 instance
-  region: ""
-  #  s3.secretKey -- Explicit declaration of the Secret key of your S3 instance.
-  #  It has lower priority than the corresponding secret values.
-  secretKey: ""
+  region: "us-east-1"
+  #  s3.signatureVersion -- Signature version used by your S3 instance.
+  signatureVersion: "s3v4"
 
 #  securityContext -- Core [Security context for container](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/)
 securityContext:
@@ -399,30 +528,42 @@ serviceAccount:
 
 #  solr -- Solr configuration
 solr:
-  #  solr.enabled -- Set this value to true if you want to use Core with Solr
+  #  solr.enabled -- Set this value to true if you want to use Core with an existing Solr instance
   enabled: false
+  #  solr.basicAuth -- Basic Auth configuration of Solr
+  basicAuth:
+    #  solr.basicAuth.enabled -- Set this value to true if you use BasicAuth in your Solr instance
+    enabled: false
+    #  solr.credentials -- Solr credentials configuration
+    credentials:
+      # solr.basicAuth.credentials.existingSecrets -- Existing secrets for Solr Basic Auth configuration
+      existingSecrets:
+        # solr.basicAuth.credentials.existingSecrets.admin -- Existing secret for Solr Basic Auth admin user
+        admin:
+          #  solr.basicAuth.credentials.existingSecrets.admin.passwordKey -- Password key
+          passwordKey: ""
+          #  solr.basicAuth.credentials.existingSecrets.admin.secretName -- Secret name
+          secretName: ""
+          #  solr.basicAuth.credentials.existingSecrets.admin.usernameKey -- Username key
+          usernameKey: ""
+        #  solr.basicAuth.credentials.existingSecrets.user -- Existing secret for Solr Basic Auth user
+        user:
+          #  solr.basicAuth.credentials.existingSecrets.user.passwordKey -- Password key
+          passwordKey: ""
+          #  solr.basicAuth.credentials.existingSecrets.user.secretName -- Secret name
+          secretName: ""
+          #  solr.basicAuth.credentials.existingSecrets.user.usernameKey -- Username key
+          usernameKey: ""
   #  solr.collection -- Solr collection configuration
   collection:
-    #  solr.collection.initialize --
-    initialize:
-      #  solr.collection.initialize.enabled -- Enable/Disable Solr collection initialization by script, use it if you have set Basic Auth for Solr
-      enabled: true
-      #  solr.collection.initialize.image -- Initialization image
-      image: smartcommunitylab/k8s-ansible:1.30.0-1.7.0-nonroot
-      #  solr.collection.initialize.securityJsonSecret -- Name of the secret containing the Solr security.json
-      securityJsonSecret: ""
     #  solr.collection.name -- Name of the Solr collection
     name: ""
-  #  solr.fullNameOverride --
-  fullNameOverride: ""
-  #  solr.url --
+  #  solr.url -- URL of your Solr instance
   url: ""
-  #  solr.user -- Specify the solr user
-  user: ""
 
 #  sts --
 sts:
-  #  sts.enabled -- Enable/Disable STS component for dynamic credentials (Both for Postgres and S3 operations)
+  #  sts.enabled -- Enable/Disable STS component for dynamic credentials
   enabled: false
   #  sts.affinity -- Affinity for pod assignment.
   affinity: {}
@@ -515,6 +656,8 @@ sts:
     seccompProfile:
       #  sts.podSecurityContext.seccompProfile.type -- Pod configure seccompProfile type.
       type: RuntimeDefault
+  #  sts.priorityClassName -- Name of the priority class, leave empty to not set any.
+  priorityClassName: ""
   #  sts.replicaCount -- Desired number of pods.
   replicaCount: 1
   #  sts.resources -- STS container resource requests and limits.

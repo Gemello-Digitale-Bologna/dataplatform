@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # minio-operator
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/scc-digitalhub/digitalhub/release.yaml?event=push) [![license](https://img.shields.io/badge/license-AGPL%20V3-blue)](https://github.com/scc-digitalhub/digitalhub/tree/main/charts/minio-operator/LICENSE) ![GitHub Release](https://img.shields.io/github/v/release/scc-digitalhub/digitalhub?filter=minio-operator*)
-![Status](https://img.shields.io/badge/status-stable-gold) ![Version: 0.1.7](https://img.shields.io/badge/Version-0.1.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.1](https://img.shields.io/badge/AppVersion-1.0.1-informational?style=flat-square)
+![Status](https://img.shields.io/badge/status-stable-gold) ![Version: 0.1.10](https://img.shields.io/badge/Version-0.1.10-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.1](https://img.shields.io/badge/AppVersion-1.0.1-informational?style=flat-square)
 
 A Kubernetes operator to handle instances of buckets, users and policies on MinIO.
 
@@ -50,6 +50,75 @@ helm repo add digitalhub https://scc-digitalhub.github.io/digitalhub/
 		<th>Default</th>
 	</thead>
 	<tbody>
+		<tr>
+			<td id="global"><a href="./values.yaml#L6">global</a></td>
+			<td>
+object
+</td>
+			<td>Global configurations.</td>
+      <td>
+				<div style="max-width: 300px;">
+<details>
+<summary>+Expand</summary>
+<pre lang="json">
+{
+  "externalHostAddress": "",
+  "s3": {
+    "rootUserSecret": ""
+  }
+}
+</pre>
+</details>
+</div>
+			</td>
+		</tr>
+		<tr>
+			<td id="global--externalHostAddress"><a href="./values.yaml#L8">global.externalHostAddress</a></td>
+			<td>
+string
+</td>
+			<td>S3 API URL</td>
+      <td>
+				<div style="max-width: 300px;">
+<pre lang="json">
+""
+</pre>
+</div>
+			</td>
+		</tr>
+		<tr>
+			<td id="global--s3"><a href="./values.yaml#L10">global.s3</a></td>
+			<td>
+object
+</td>
+			<td></td>
+      <td>
+				<div style="max-width: 300px;">
+<details>
+<summary>+Expand</summary>
+<pre lang="json">
+{
+  "rootUserSecret": ""
+}
+</pre>
+</details>
+</div>
+			</td>
+		</tr>
+		<tr>
+			<td id="global--s3--rootUserSecret"><a href="./values.yaml#L12">global.s3.rootUserSecret</a></td>
+			<td>
+string
+</td>
+			<td>s3 admin credentials secret name</td>
+      <td>
+				<div style="max-width: 300px;">
+<pre lang="json">
+""
+</pre>
+</div>
+			</td>
+		</tr>
 		<tr>
 			<td id="affinity"><a href="./values.yaml#L16">affinity</a></td>
 			<td>
@@ -275,7 +344,7 @@ int
 			<td>
 int
 </td>
-			<td>Set CPU utilization percentage that trigger the autoscaling </td>
+			<td>Set CPU utilization percentage that trigger the autoscaling</td>
       <td>
 				<div style="max-width: 300px;">
 <pre lang="json">
@@ -298,9 +367,9 @@ object
 {
   "kubeRbacProxy": {
     "args": [
+      "--logtostderr=true",
       "--secure-listen-address=0.0.0.0:8443",
       "--upstream=http://127.0.0.1:8080/",
-      "--logtostderr=true",
       "--v=0"
     ],
     "image": {
@@ -338,8 +407,8 @@ object
   "manager": {
     "args": [
       "--health-probe-bind-address=:8081",
-      "--metrics-bind-address=127.0.0.1:8080",
-      "--leader-elect"
+      "--leader-elect",
+      "--metrics-bind-address=127.0.0.1:8080"
     ],
     "command": [
       "/manager"
@@ -392,9 +461,9 @@ object
 <pre lang="json">
 {
   "args": [
+    "--logtostderr=true",
     "--secure-listen-address=0.0.0.0:8443",
     "--upstream=http://127.0.0.1:8080/",
-    "--logtostderr=true",
     "--v=0"
   ],
   "image": {
@@ -446,9 +515,9 @@ list
 <summary>+Expand</summary>
 <pre lang="json">
 [
+  "--logtostderr=true",
   "--secure-listen-address=0.0.0.0:8443",
   "--upstream=http://127.0.0.1:8080/",
-  "--logtostderr=true",
   "--v=0"
 ]
 </pre>
@@ -735,8 +804,8 @@ object
 {
   "args": [
     "--health-probe-bind-address=:8081",
-    "--metrics-bind-address=127.0.0.1:8080",
-    "--leader-elect"
+    "--leader-elect",
+    "--metrics-bind-address=127.0.0.1:8080"
   ],
   "command": [
     "/manager"
@@ -788,8 +857,8 @@ list
 <pre lang="json">
 [
   "--health-probe-bind-address=:8081",
-  "--metrics-bind-address=127.0.0.1:8080",
-  "--leader-elect"
+  "--leader-elect",
+  "--metrics-bind-address=127.0.0.1:8080"
 ]
 </pre>
 </details>
@@ -1062,75 +1131,6 @@ string
 			</td>
 		</tr>
 		<tr>
-			<td id="global"><a href="./values.yaml#L6">global</a></td>
-			<td>
-object
-</td>
-			<td>Global configurations.</td>
-      <td>
-				<div style="max-width: 300px;">
-<details>
-<summary>+Expand</summary>
-<pre lang="json">
-{
-  "externalHostAddress": "",
-  "minio": {
-    "rootUserSecret": ""
-  }
-}
-</pre>
-</details>
-</div>
-			</td>
-		</tr>
-		<tr>
-			<td id="global--externalHostAddress"><a href="./values.yaml#L8">global.externalHostAddress</a></td>
-			<td>
-string
-</td>
-			<td>Minio API URL</td>
-      <td>
-				<div style="max-width: 300px;">
-<pre lang="json">
-""
-</pre>
-</div>
-			</td>
-		</tr>
-		<tr>
-			<td id="global--minio"><a href="./values.yaml#L10">global.minio</a></td>
-			<td>
-object
-</td>
-			<td></td>
-      <td>
-				<div style="max-width: 300px;">
-<details>
-<summary>+Expand</summary>
-<pre lang="json">
-{
-  "rootUserSecret": ""
-}
-</pre>
-</details>
-</div>
-			</td>
-		</tr>
-		<tr>
-			<td id="global--minio--rootUserSecret"><a href="./values.yaml#L12">global.minio.rootUserSecret</a></td>
-			<td>
-string
-</td>
-			<td>Minio admin credentials secret name</td>
-      <td>
-				<div style="max-width: 300px;">
-<pre lang="json">
-""
-</pre>
-</div>
-			</td>
-		</tr>
-		<tr>
 			<td id="imagePullSecrets"><a href="./values.yaml#L142">imagePullSecrets</a></td>
 			<td>
 list
@@ -1181,6 +1181,20 @@ object
 			</td>
 		</tr>
 		<tr>
+			<td id="ingress--enabled"><a href="./values.yaml#L147">ingress.enabled</a></td>
+			<td>
+bool
+</td>
+			<td>Enables Ingress.</td>
+      <td>
+				<div style="max-width: 300px;">
+<pre lang="json">
+false
+</pre>
+</div>
+			</td>
+		</tr>
+		<tr>
 			<td id="ingress--annotations"><a href="./values.yaml#L149">ingress.annotations</a></td>
 			<td>
 object
@@ -1207,20 +1221,6 @@ string
 				<div style="max-width: 300px;">
 <pre lang="json">
 ""
-</pre>
-</div>
-			</td>
-		</tr>
-		<tr>
-			<td id="ingress--enabled"><a href="./values.yaml#L147">ingress.enabled</a></td>
-			<td>
-bool
-</td>
-			<td>Enables Ingress.</td>
-      <td>
-				<div style="max-width: 300px;">
-<pre lang="json">
-false
 </pre>
 </div>
 			</td>
@@ -1637,7 +1637,21 @@ string
 			</td>
 		</tr>
 		<tr>
-			<td id="replicaCount"><a href="./values.yaml#L215">replicaCount</a></td>
+			<td id="priorityClassName"><a href="./values.yaml#L215">priorityClassName</a></td>
+			<td>
+string
+</td>
+			<td>Name of the priority class, leave empty to not set any.</td>
+      <td>
+				<div style="max-width: 300px;">
+<pre lang="json">
+""
+</pre>
+</div>
+			</td>
+		</tr>
+		<tr>
+			<td id="replicaCount"><a href="./values.yaml#L218">replicaCount</a></td>
 			<td>
 int
 </td>
@@ -1651,7 +1665,7 @@ int
 			</td>
 		</tr>
 		<tr>
-			<td id="service"><a href="./values.yaml#L218">service</a></td>
+			<td id="service"><a href="./values.yaml#L221">service</a></td>
 			<td>
 object
 </td>
@@ -1671,7 +1685,7 @@ object
 			</td>
 		</tr>
 		<tr>
-			<td id="service--port"><a href="./values.yaml#L220">service.port</a></td>
+			<td id="service--port"><a href="./values.yaml#L223">service.port</a></td>
 			<td>
 int
 </td>
@@ -1685,7 +1699,7 @@ int
 			</td>
 		</tr>
 		<tr>
-			<td id="service--type"><a href="./values.yaml#L222">service.type</a></td>
+			<td id="service--type"><a href="./values.yaml#L225">service.type</a></td>
 			<td>
 string
 </td>
@@ -1699,7 +1713,7 @@ string
 			</td>
 		</tr>
 		<tr>
-			<td id="serviceAccount"><a href="./values.yaml#L225">serviceAccount</a></td>
+			<td id="serviceAccount"><a href="./values.yaml#L228">serviceAccount</a></td>
 			<td>
 object
 </td>
@@ -1721,7 +1735,7 @@ object
 			</td>
 		</tr>
 		<tr>
-			<td id="serviceAccount--annotations"><a href="./values.yaml#L227">serviceAccount.annotations</a></td>
+			<td id="serviceAccount--annotations"><a href="./values.yaml#L230">serviceAccount.annotations</a></td>
 			<td>
 object
 </td>
@@ -1738,7 +1752,7 @@ object
 			</td>
 		</tr>
 		<tr>
-			<td id="serviceAccount--automount"><a href="./values.yaml#L229">serviceAccount.automount</a></td>
+			<td id="serviceAccount--automount"><a href="./values.yaml#L232">serviceAccount.automount</a></td>
 			<td>
 bool
 </td>
@@ -1752,7 +1766,7 @@ true
 			</td>
 		</tr>
 		<tr>
-			<td id="serviceAccount--create"><a href="./values.yaml#L231">serviceAccount.create</a></td>
+			<td id="serviceAccount--create"><a href="./values.yaml#L234">serviceAccount.create</a></td>
 			<td>
 bool
 </td>
@@ -1766,7 +1780,7 @@ true
 			</td>
 		</tr>
 		<tr>
-			<td id="serviceAccount--name"><a href="./values.yaml#L233">serviceAccount.name</a></td>
+			<td id="serviceAccount--name"><a href="./values.yaml#L236">serviceAccount.name</a></td>
 			<td>
 string
 </td>
@@ -1780,7 +1794,7 @@ string
 			</td>
 		</tr>
 		<tr>
-			<td id="tolerations"><a href="./values.yaml#L236">tolerations</a></td>
+			<td id="tolerations"><a href="./values.yaml#L239">tolerations</a></td>
 			<td>
 list
 </td>
@@ -1797,7 +1811,7 @@ list
 			</td>
 		</tr>
 		<tr>
-			<td id="volumeMounts"><a href="./values.yaml#L239">volumeMounts</a></td>
+			<td id="volumeMounts"><a href="./values.yaml#L242">volumeMounts</a></td>
 			<td>
 list
 </td>
@@ -1814,7 +1828,7 @@ list
 			</td>
 		</tr>
 		<tr>
-			<td id="volumes"><a href="./values.yaml#L242">volumes</a></td>
+			<td id="volumes"><a href="./values.yaml#L245">volumes</a></td>
 			<td>
 list
 </td>

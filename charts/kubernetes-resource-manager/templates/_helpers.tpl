@@ -102,11 +102,9 @@ Create default access URL
 
 {{- define "kubernetes-resource-manager.allowedCrd" -}}
 {{- range $i, $apiGroup := .Values.rbac.roles }}
-{{- range $j, $res := $apiGroup.resources }}
 {{- if $apiGroup.crd }}
-{{- if ne $i 0 }},{{ end }}
-{{- if ne $j 0 }},{{ end }}
-{{- printf "%s.%s" $res $apiGroup.apiGroups }}
+{{- range $j, $res := $apiGroup.resources }}
+{{- printf "%s.%s," $res $apiGroup.apiGroups -}}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -120,7 +118,7 @@ Namespace function
 {{- if .Values.namespaceValues.namespace }}
 {{- .Values.namespaceValues.namespace }}
 {{- else }}
-{{- .Release.Namespace}}
+{{- .Release.Namespace }}
 {{- end }}
 {{- else }}
 {{- .Values.namespaceValues.defaultValue }}

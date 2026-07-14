@@ -6,11 +6,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 2.4.2"
+      version = "~> 2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.36.0"
+      version = "~> 2.38.0"
     }
   }
 }
@@ -19,7 +19,8 @@ provider "coder" {
 }
 
 locals {
-  sqlpad_url = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}sqlpad--sqlpad--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  sqlpad_url     = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}sqlpad--sqlpad--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  decoded_labels = var.extra_labels != "" ? jsondecode(base64decode(var.extra_labels)) : {}
 }
 
 variable "namespace" {
@@ -28,22 +29,32 @@ variable "namespace" {
   default     = "digitalhub"
 }
 
-variable "db_host" {
+variable "postgresql_hostname" {
   description = "Provide the db host"
   type        = string
   default     = "database-postgres-cluster"
 }
 
-variable "db_name" {
+variable "postgresql_db_name" {
   description = "Provide the db name"
   type        = string
   default     = "digitalhub"
 }
 
-variable "db_secret" {
+variable "postgresql_creds_secret" {
   description = "Provide the db secret name with username and password"
   type        = string
   default     = "digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do"
+}
+
+variable "postgresql_username_key" {
+  type        = string
+  description = "Postgresql database credentials username key"
+}
+
+variable "postgresql_password_key" {
+  type        = string
+  description = "Postgresql database credentials password key"
 }
 
 variable "service_type" {
@@ -72,6 +83,12 @@ variable "external_url" {
 variable "extra_vars" {
   type    = bool
   default = false
+}
+
+variable "extra_labels" {
+  type        = string
+  description = "Extra labels that will be used by the workspace deployment. The labels must be in json format and encoded in Base64."
+  default     = ""
 }
 
 provider "kubernetes" {
@@ -221,18 +238,20 @@ resource "kubernetes_deployment" "sqlpad" {
   metadata {
     name      = "sqlpad-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "sqlpad-workspace"
-      "app.kubernetes.io/instance" = "sqlpad-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "app.kubernetes.io/type"     = "workspace"
-      // Coder specific labels.
-      "com.coder.resource"       = "true"
-      "com.coder.workspace.id"   = data.coder_workspace.me.id
-      "com.coder.workspace.name" = data.coder_workspace.me.name
-      "com.coder.user.id"        = data.coder_workspace_owner.me.id
-      "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    labels = merge(
+      {
+        "app.kubernetes.io/name"     = "sqlpad-workspace"
+        "app.kubernetes.io/instance" = "sqlpad-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+        "app.kubernetes.io/part-of"  = "coder"
+        "app.kubernetes.io/type"     = "workspace"
+        // Coder specific labels.
+        "com.coder.resource"       = "true"
+        "com.coder.workspace.id"   = data.coder_workspace.me.id
+        "com.coder.workspace.name" = data.coder_workspace.me.name
+        "com.coder.user.id"        = data.coder_workspace_owner.me.id
+        "com.coder.user.username"  = data.coder_workspace_owner.me.name
+      },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
@@ -257,12 +276,18 @@ resource "kubernetes_deployment" "sqlpad" {
           "app.kubernetes.io/instance" = "sqlpad-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
           "app.kubernetes.io/part-of"  = "coder"
           "app.kubernetes.io/type"     = "workspace"
+          // Coder specific labels.
+          "com.coder.resource"       = "true"
+          "com.coder.workspace.id"   = data.coder_workspace.me.id
+          "com.coder.workspace.name" = data.coder_workspace.me.name
+          "com.coder.user.id"        = data.coder_workspace_owner.me.id
+          "com.coder.user.username"  = data.coder_workspace_owner.me.name
         }
       }
       spec {
         security_context {
-          run_as_user = "1000"
-          fs_group    = "1000"
+          run_as_user     = "1001"
+          fs_group        = "1001"
           run_as_non_root = true
           seccomp_profile {
             type = "RuntimeDefault"
@@ -274,7 +299,7 @@ resource "kubernetes_deployment" "sqlpad" {
           image_pull_policy = "IfNotPresent"
           command           = ["sh", "-c", coder_agent.sqlpad.init_script]
           security_context {
-            run_as_user                = "1000"
+            run_as_user                = "1001"
             allow_privilege_escalation = false
             capabilities {
               drop = [
@@ -304,15 +329,15 @@ resource "kubernetes_deployment" "sqlpad" {
           }
           env {
             name  = "SQLPAD_CONNECTIONS__pg__name"
-            value = var.db_name
+            value = var.postgresql_db_name
           }
           env {
             name  = "SQLPAD_CONNECTIONS__pg__database"
-            value = var.db_name
+            value = var.postgresql_db_name
           }
           env {
             name  = "SQLPAD_CONNECTIONS__pg__host"
-            value = var.db_host
+            value = var.postgresql_hostname
           }
           env {
             name  = "SQLPAD_CONNECTIONS__pg__multiStatementTransactionEnabled"
@@ -330,8 +355,8 @@ resource "kubernetes_deployment" "sqlpad" {
             name = "SQLPAD_CONNECTIONS__pg__password"
             value_from {
               secret_key_ref {
-                name = var.db_secret
-                key  = "password"
+                name = var.postgresql_creds_secret
+                key  = var.postgresql_password_key
               }
             }
           }
@@ -339,8 +364,8 @@ resource "kubernetes_deployment" "sqlpad" {
             name = "SQLPAD_CONNECTIONS__pg__username"
             value_from {
               secret_key_ref {
-                name = var.db_secret
-                key  = "username"
+                name = var.postgresql_creds_secret
+                key  = var.postgresql_username_key
               }
             }
           }

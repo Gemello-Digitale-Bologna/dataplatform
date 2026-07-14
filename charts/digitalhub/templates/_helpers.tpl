@@ -62,11 +62,11 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Create registry auth values 
+Create registry auth values
 */}}
 {{- define "digitalhub.registryAuth" -}}
-{{- if and .Values.global.registry.username .Values.global.registry.password }}
-{{- printf "%s:%s" .Values.global.registry.username .Values.global.registry.password | b64enc }}
+{{- if and .Values.global.ociRegistry.username .Values.global.ociRegistry.password }}
+{{- printf "%s:%s" .Values.global.ociRegistry.username .Values.global.ociRegistry.password | b64enc }}
 {{- end }}
 {{- end }}
 
@@ -74,7 +74,7 @@ Create registry auth values
 Calculate dashboard oidc configuration endpoint
 */}}
 {{- define "digitalhub.oidcDashboardEndpoint" -}}
-{{- if .Values.dashboard.ingress.enabled}}
+{{- if .Values.dashboard.ingress.enabled }}
 {{- with (index .Values.dashboard.ingress.hosts 0) }}
 {{- .host -}}
 {{- end }}
@@ -139,47 +139,60 @@ Set packages versions for code-toolbox and tests
 Variables used in the creation and upgrade of Coder templates
 */}}
 {{- define "digitalhub.coderTemplateVariables" -}}
-{{- $variables := list}}
+{{- $variables := list }}
 {{- $root := index . 0 -}}
 {{- $template := index . 1  -}}
 {{- if $template.extraVars -}}
 {{- $variables = append $variables (printf "extra_vars=true" ) }}
 {{- end }}
+{{- if $template.extraLabels -}}
+{{- $labels := list }}
+{{- $labels = (toJson $template.extraLabels | b64enc )}}
+{{- $variables = append $variables (printf "extra_labels=\"%s\"" $labels ) }}
+{{- end }}
 {{- $variables = append $variables (printf "node_port=%s" $template.nodePort ) }}
-{{- $variables = append $variables (printf "minio_endpoint=%s:%s" $root.Values.global.minio.endpoint $root.Values.global.minio.endpointPort ) }}
-{{- $variables = append $variables (printf "minio_bucket=%s" $root.Values.global.minio.bucket ) }}
+{{- $variables = append $variables (printf "s3_endpoint=%s:%s" $root.Values.global.s3.endpoint $root.Values.global.s3.endpointPort ) }}
+{{- $variables = append $variables (printf "s3_bucket=%s" $root.Values.global.s3.platform.bucket ) }}
 {{- $variables = append $variables (printf "namespace=%s" $root.Release.Namespace ) }}
 {{- $variables = append $variables (printf "service_type=%s" $root.Values.global.service.type ) }}
 {{- $variables = append $variables (printf "node_port=%s" $template.nodePort ) }}
 {{- $variables = append $variables (printf "external_url=%s" (default $root.Values.global.externalHostAddress $root.Subcharts.coder.Values.externalHostAddress) ) }}
 {{- $variables = append $variables (printf "https=%s" (include "digitalhub.coderIngressTlsEnabled" $root) ) }}
-{{- if not (eq $template.name "code-toolbox-experimental")}}
+{{- if not (eq $template.name "code-toolbox")}}
   {{- $variables = append $variables (printf "image=%s" $template.image ) }}
 {{- end }}
 {{- if eq $template.name "dremio"}}
-  {{- $variables = append $variables (printf "minio_digitalhub_user_secret=%s" $root.Values.global.minio.digitalhubUserSecret ) }}
+{{- if and $root.Values.global.s3.platform.existingSecret.secretName $root.Values.global.s3.platform.existingSecret.accessKeyKey $root.Values.global.s3.platform.existingSecret.secretKeyKey }}
+  {{- $variables = append $variables (printf "s3_platform_user_secret=%s" $root.Values.global.s3.platform.existingSecret.secretName ) }}
+  {{- $variables = append $variables (printf "s3_access_key_key=%s" $root.Values.global.s3.platform.existingSecret.accessKeyKey ) }}
+  {{- $variables = append $variables (printf "s3_secret_key_key=%s" $root.Values.global.s3.platform.existingSecret.secretKeyKey ) }}
+{{- else }}
+  {{- $variables = append $variables (printf "s3_platform_user_secret=%s" $root.Values.global.s3.platform.platformUserSecret ) }}
+{{- end }}
 {{- end }}
 {{- if or (eq $template.name "dremio") (eq $template.name "sqlpad")}}
-  {{- $variables = append $variables (printf "db_secret=%s" $template.postgres.database ) }}
+  {{- $variables = append $variables (printf "postgresql_db_name=%s" $template.postgres.database ) }}
   {{- $variables = append $variables (printf "postgresql_hostname=%s" $template.postgres.hostname ) }}
-  {{- $variables = append $variables (printf "postgresql_creds_secret=%s" $template.postgres.ownerCredsSecret ) }}
+{{- if and $template.postgres.ownerCredsSecret.secretName $template.postgres.ownerCredsSecret.usernameKey }}
+  {{- $variables = append $variables (printf "postgresql_creds_secret=%s" $template.postgres.ownerCredsSecret.secretName ) }}
+  {{- $variables = append $variables (printf "postgresql_username_key=%s" $template.postgres.ownerCredsSecret.usernameKey ) }}
+  {{- $variables = append $variables (printf "postgresql_password_key=%s" $template.postgres.ownerCredsSecret.passwordKey ) }}
+{{- end }}
 {{- end }}
 {{- if eq $template.name "jupyter"}}
   {{- $variables = append $variables (printf "image_3_9=%s" $template.image39 ) }}
   {{- $variables = append $variables (printf "image_3_11=%s" $template.image311 ) }}
 {{- end }}
-{{- if or (eq $template.name "jupyter") (eq $template.name "code-toolbox-experimental")}}
+{{- if or (eq $template.name "jupyter") (eq $template.name "code-toolbox")}}
   {{- $variables = append $variables (printf "privileged=%v" $template.privileged ) }}
   {{- $variables = append $variables (printf "stsenabled=%v" $root.Values.core.sts.enabled ) }}
-  {{- if $root.Values.core.ingress.enabled }}
-    {{- with (index $root.Values.core.ingress.hosts 0) }}
-      {{- $variables = append $variables (printf "dhcore_endpoint=https://%s" .host ) }}
-      {{- $variables = append $variables (printf "dhcore_issuer=https://%s" .host ) }}
-    {{- end }}
-  {{- else }}
-    {{- $variables = append $variables (printf "dhcore_endpoint=\"\"" ) }}
-    {{- $variables = append $variables (printf "dhcore_issuer=\"\"" ) }}
-  {{- end }}
+{{- if and $root.Values.core.coreAuthCreds.existingSecret.secretName $root.Values.core.coreAuthCreds.existingSecret.clientIdKey $root.Values.core.coreAuthCreds.existingSecret.clientSecretKey }}
+  {{- $variables = append $variables (printf "core_auth_creds_secret=%v" $root.Values.core.coreAuthCreds.existingSecret.secretName ) }}
+  {{- $variables = append $variables (printf "client_id_key=%v" $root.Values.core.coreAuthCreds.existingSecret.clientIdKey ) }}
+  {{- $variables = append $variables (printf "client_secret_key=%v" $root.Values.core.coreAuthCreds.existingSecret.clientSecretKey ) }}
+{{- end }}
+    {{- $variables = append $variables (printf "dhcore_endpoint=http://%s-core:%s" $root.Release.Name $root.Values.core.service.port ) }}
+    {{- $variables = append $variables (printf "dhcore_issuer=http://%s-core:%s" $root.Release.Name $root.Values.core.service.port ) }}
 {{- end }}
 {{- join "," $variables -}}
 {{- end -}}

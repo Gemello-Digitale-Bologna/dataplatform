@@ -6,11 +6,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 2.4.2"
+      version = "~> 2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.36.0"
+      version = "~> 2.38.0"
     }
   }
 }
@@ -19,7 +19,8 @@ provider "coder" {
 }
 
 locals {
-  grafana_url = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}grafana--grafana--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  grafana_url    = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}grafana--grafana--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  decoded_labels = var.extra_labels != "" ? jsondecode(base64decode(var.extra_labels)) : {}
 }
 
 variable "namespace" {
@@ -54,6 +55,12 @@ variable "external_url" {
 variable "extra_vars" {
   type    = bool
   default = false
+}
+
+variable "extra_labels" {
+  type        = string
+  description = "Extra labels that will be used by the workspace deployment. The labels must be in json format and encoded in Base64."
+  default     = ""
 }
 
 provider "kubernetes" {
@@ -204,18 +211,20 @@ resource "kubernetes_deployment" "grafana" {
   metadata {
     name      = "grafana-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "grafana-workspace"
-      "app.kubernetes.io/instance" = "grafana-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "app.kubernetes.io/type"     = "workspace"
-      // Coder specific labels.
-      "com.coder.resource"       = "true"
-      "com.coder.workspace.id"   = data.coder_workspace.me.id
-      "com.coder.workspace.name" = data.coder_workspace.me.name
-      "com.coder.user.id"        = data.coder_workspace_owner.me.id
-      "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    labels = merge(
+      {
+        "app.kubernetes.io/name"     = "grafana-workspace"
+        "app.kubernetes.io/instance" = "grafana-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+        "app.kubernetes.io/part-of"  = "coder"
+        "app.kubernetes.io/type"     = "workspace"
+        // Coder specific labels.
+        "com.coder.resource"       = "true"
+        "com.coder.workspace.id"   = data.coder_workspace.me.id
+        "com.coder.workspace.name" = data.coder_workspace.me.name
+        "com.coder.user.id"        = data.coder_workspace_owner.me.id
+        "com.coder.user.username"  = data.coder_workspace_owner.me.name
+      },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
@@ -240,12 +249,18 @@ resource "kubernetes_deployment" "grafana" {
           "app.kubernetes.io/instance" = "grafana-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
           "app.kubernetes.io/part-of"  = "coder"
           "app.kubernetes.io/type"     = "workspace"
+          // Coder specific labels.
+          "com.coder.resource"       = "true"
+          "com.coder.workspace.id"   = data.coder_workspace.me.id
+          "com.coder.workspace.name" = data.coder_workspace.me.name
+          "com.coder.user.id"        = data.coder_workspace_owner.me.id
+          "com.coder.user.username"  = data.coder_workspace_owner.me.name
         }
       }
       spec {
         security_context {
-          run_as_user = "472"
-          fs_group = "472"
+          run_as_user     = "472"
+          fs_group        = "472"
           run_as_non_root = true
           seccomp_profile {
             type = "RuntimeDefault"

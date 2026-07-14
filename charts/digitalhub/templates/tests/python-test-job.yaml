@@ -19,15 +19,22 @@ spec:
     spec:
       initContainers:
         - name: clone-repo
-          image: bitnami/git:latest
-          command: ["/bin/sh", "-c", "cd home/git/ && git clone https://github.com/scc-digitalhub/digitalhub-tutorials.git"]
+          image: chainguard/git:latest
+          command: ["/bin/sh", "-c", "git clone https://github.com/scc-digitalhub/digitalhub-tutorials.git"]
           volumeMounts:
             - name: git-volume
               mountPath: /home/git
               readOnly: false
           securityContext:
-            readOnlyRootFilesystem: false
-            runAsUser: 0
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
       containers:
         - name: python
           image: "{{ $.Values.platformPackages.image | default "python" }}:{{ $.Values.platformPackages.tag | default "3.10-slim" }}"
@@ -43,6 +50,9 @@ spec:
             - name: git-volume
               mountPath: /home/git
               readOnly: false
+            - name: local
+              mountPath: /.local
+              readOnly: false
           env:
             - name: TEST_SCRIPT
               value: {{ $key | trimPrefix "confs/tests/python-test/" }}
@@ -52,26 +62,35 @@ spec:
               value: "True"
             {{- if $.Values.core.authentication.openId.enabled }}
             - name: "CORE_CLIENT_ID"
+              {{- if and $.Values.core.coreAuthCreds.existingSecret.secretName $.Values.core.coreAuthCreds.existingSecret.clientIdKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.core.coreAuthCreds.existingSecret.secretName }}
+                  key: {{ $.Values.core.coreAuthCreds.existingSecret.clientIdKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: "core-auth-creds"
                   key: "clientId"
+              {{- end }}
             - name: "CORE_CLIENT_SECRET"
+              {{- if and $.Values.core.coreAuthCreds.existingSecret.secretName $.Values.core.coreAuthCreds.existingSecret.clientSecretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.core.coreAuthCreds.existingSecret.secretName }}
+                  key: {{ $.Values.core.coreAuthCreds.existingSecret.clientSecretKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: "core-auth-creds"
                   key: "clientSecret"
-            {{- if $.Values.core.ingress.enabled }}
-            {{- with (index $.Values.core.ingress.hosts 0) }}
+              {{- end }}
             - name: "DHCORE_ENDPOINT"
-              value: https://{{ .host }}
+              value: http://{{ $.Release.Name }}-core:{{ $.Values.core.service.port }}
             - name: "DHCORE_ISSUER"
-              value: https://{{ .host }}
+              value: http://{{ $.Release.Name }}-core:{{ $.Values.core.service.port }}
             {{- end }}
-            {{- end }}
-            {{- else }}
-            - name: "DHCORE_ENDPOINT"
-              value: http://{{ $.Release.Name }}-core:8080
+            {{- if $.Values.core.authentication.basic.enabled }}
             - name: "DHCORE_USER"
               value: {{ $.Values.core.authentication.basic.username }}
             - name: "DHCORE_PASSWORD"
@@ -81,8 +100,15 @@ spec:
           - configMapRef:
               name: digitalhub-common-env
           securityContext:
-            readOnlyRootFilesystem: false
-            runAsUser: 0
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
       volumes:
         - name: test-volume
           configMap:
@@ -92,10 +118,15 @@ spec:
             name: {{ include "digitalhub.fullname" $ }}-python-script-test
         - name: git-volume
           emptyDir: {}
+        - name: local
+          emptyDir: {}
       securityContext:
-        runAsUser: 0
-        fsGroup: 0
-        runAsGroup: 0
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       restartPolicy: Never
   backoffLimit: 0
 ---

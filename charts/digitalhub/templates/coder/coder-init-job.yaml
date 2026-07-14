@@ -26,20 +26,41 @@ spec:
             - name: CODER_URL
               value: "http://coder"
             - name: CODER_FIRST_USER_USERNAME
+              {{- if and .Values.coder.existingSecrets.adminUserExistingSecret.secretName .Values.coder.existingSecrets.adminUserExistingSecret.usernameKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coder.existingSecrets.adminUserExistingSecret.secretName }}
+                  key: {{ .Values.coder.existingSecrets.adminUserExistingSecret.usernameKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: coder-user
                   key: username
+              {{- end }}
             - name: CODER_FIRST_USER_PASSWORD
+              {{- if and .Values.coder.existingSecrets.adminUserExistingSecret.secretName .Values.coder.existingSecrets.adminUserExistingSecret.passwordKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coder.existingSecrets.adminUserExistingSecret.secretName }}
+                  key: {{ .Values.coder.existingSecrets.adminUserExistingSecret.passwordKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: coder-user
                   key: password
+              {{- end }}
             - name: CODER_FIRST_USER_EMAIL
+              {{- if and .Values.coder.existingSecrets.adminUserExistingSecret.secretName .Values.coder.existingSecrets.adminUserExistingSecret.emailKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coder.existingSecrets.adminUserExistingSecret.secretName }}
+                  key: {{ .Values.coder.existingSecrets.adminUserExistingSecret.emailKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: coder-user
                   key: email
+              {{- end }}
             - name: CODER_FIRST_USER_TRIAL
               value: "false"
           volumeMounts:
@@ -50,7 +71,7 @@ spec:
             mountPath: "/home/coder/custom-template"
             readOnly: true
           securityContext:
-            {{- toYaml .Values.global.securityContext | nindent 12}}
+            {{- toYaml .Values.global.securityContext | nindent 12 }}
       restartPolicy: Never
       volumes:
         - name: init-files

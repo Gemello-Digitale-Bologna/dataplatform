@@ -6,11 +6,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 2.4.2"
+      version = "~> 2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.36.0"
+      version = "~> 2.38.0"
     }
     http = {
       source  = "hashicorp/http"
@@ -27,6 +27,7 @@ provider "http" {
 
 locals {
   code_toolbox_url = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}code-toolbox--code-toolbox--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  decoded_labels   = var.extra_labels != "" ? jsondecode(base64decode(var.extra_labels)) : {}
 }
 
 variable "use_kubeconfig" {
@@ -78,14 +79,19 @@ variable "stsenabled" {
   default = false
 }
 
-variable "core_auth_creds" {
+variable "core_auth_creds_secret" {
   type    = string
   default = "core-auth-creds"
 }
 
-variable "clientId" {
+variable "client_id_key" {
   type    = string
-  default = "core-auth-creds"
+  default = "clientId"
+}
+
+variable "client_secret_key" {
+  type    = string
+  default = "clientSecret"
 }
 
 variable "dhcore_endpoint" {
@@ -103,28 +109,25 @@ variable "extra_vars" {
   default = false
 }
 
+variable "extra_labels" {
+  type        = string
+  description = "Extra labels that will be used by the workspace deployment. The labels must be in json format and encoded in Base64."
+  default     = ""
+}
+
 data "coder_parameter" "cpu" {
   name         = "cpu"
   display_name = "CPU"
   description  = "The number of CPU cores"
-  default      = "2"
   icon         = "/emojis/1f680.png"
   mutable      = true
-  option {
-    name  = "2 Cores"
-    value = "2"
-  }
-  option {
-    name  = "4 Cores"
-    value = "4"
-  }
-  option {
-    name  = "6 Cores"
-    value = "6"
-  }
-  option {
-    name  = "8 Cores"
-    value = "8"
+  type         = "number"
+  form_type    = "slider"
+  default      = 2
+  order        = 1
+  validation {
+    min = 1
+    max = 8
   }
 }
 
@@ -134,46 +137,24 @@ data "coder_parameter" "gpu" {
   description  = "Enable GPU usage for this workspace?"
   default      = false
   mutable      = true
-  option {
-    name  = "Yes"
-    value = true
-  }
-  option {
-    name  = "No"
-    value = false
-  }
+  type         = "bool"
+  form_type    = "checkbox"
+  order        = 4
 }
 
 data "coder_parameter" "memory" {
   name         = "memory"
   display_name = "Memory"
   description  = "The amount of memory in GB"
-  default      = "4"
+  default      = 4
   icon         = "/icon/memory.svg"
   mutable      = true
-  option {
-    name  = "4 GB"
-    value = "4"
-  }
-  option {
-    name  = "6 GB"
-    value = "6"
-  }
-  option {
-    name  = "8 GB"
-    value = "8"
-  }
-  option {
-    name  = "16 GB"
-    value = "16"
-  }
-  option {
-    name  = "32 GB"
-    value = "32"
-  }
-  option {
-    name  = "64 GB"
-    value = "64"
+  order        = 2
+  type         = "number"
+  form_type    = "slider"
+  validation {
+    min = 4
+    max = 64
   }
 }
 
@@ -185,6 +166,7 @@ data "coder_parameter" "home_disk_size" {
   type         = "number"
   icon         = "/emojis/1f4be.png"
   mutable      = false
+  order        = 3
   validation {
     min = 1
     max = 99999
@@ -195,10 +177,11 @@ data "coder_parameter" "image" {
   name         = "image"
   display_name = "Image"
   description  = "Select the image for this workspace (JupyterLab included for all options)"
-  icon         = "https://cdn-icons-png.flaticon.com/512/438/438524.png"
+  icon         = "/icon/container.svg"
   mutable      = true
   default      = "python"
-
+  form_type    = "dropdown"
+  order        = 6
   option {
     name  = "Python3"
     value = "python"
@@ -207,12 +190,12 @@ data "coder_parameter" "image" {
   option {
     name  = "PyTorch"
     value = "nvcr.io/nvidia/pytorch"
-    icon  = "https://static-00.iconduck.com/assets.00/pytorch-icon-1694x2048-jgwjy3ne.png"
+    icon  = "/icon/pytorch.svg"
   }
   option {
     name  = "TensorFlow"
     value = "nvcr.io/nvidia/tensorflow"
-    icon  = "https://static-00.iconduck.com/assets.00/tensorflow-icon-1911x2048-1m2s54vn.png"
+    icon  = "/icon/tensorflow.svg"
   }
 }
 
@@ -223,14 +206,39 @@ data "coder_parameter" "python_version" {
   default      = "3.10"
   icon         = "/icon/python.svg"
   mutable      = true
+  form_type    = "dropdown"
+  order        = 5
   option {
     name  = "3.10"
     value = "3.10"
+    icon  = "/icon/python.svg"
   }
   option {
     name  = "3.12"
     value = "3.12"
+    icon  = "/icon/python.svg"
   }
+}
+
+data "coder_parameter" "jetbrains_gateway" {
+  name         = "ide"
+  display_name = "Jetbrains Gateway"
+  description  = "Use a Jetbrains IDE for this workspace with Jetbrains Gateway?"
+  default      = false
+  mutable      = true
+  type         = "bool"
+  form_type    = "checkbox"
+  icon         = "/icon/jetbrains-toolbox.svg"
+}
+
+data "coder_parameter" "git_repo" {
+  name         = "git_repo"
+  display_name = "Git repository URL"
+  description  = "Initialize the workspace with a project from GitHub"
+  default      = ""
+  order        = 7
+  mutable      = true
+  icon         = "/icon/git.svg"
 }
 
 data "http" "exchange_token" {
@@ -241,7 +249,7 @@ data "http" "exchange_token" {
   # Optional request headers
   request_headers = {
     Content-Type  = "application/x-www-form-urlencoded"
-    Authorization = "Basic ${base64encode("${data.kubernetes_secret.auth.data["clientId"]}:${data.kubernetes_secret.auth.data["clientSecret"]}")}"
+    Authorization = "Basic ${base64encode("${data.kubernetes_secret.auth.data[var.client_id_key]}:${data.kubernetes_secret.auth.data[var.client_secret_key]}")}"
   }
 
   request_body = "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&scope=openid%20offline_access%20credentials&subject_token_type=urn:ietf:params:oauth:token-type:access_token&subject_token=${data.coder_workspace_owner.me.oidc_access_token}"
@@ -266,7 +274,7 @@ data "coder_workspace_owner" "me" {}
 
 data "kubernetes_secret" "auth" {
   metadata {
-    name      = var.core_auth_creds
+    name      = var.core_auth_creds_secret
     namespace = var.namespace
   }
 }
@@ -274,11 +282,12 @@ data "kubernetes_secret" "auth" {
 module "vscode-web" {
   count          = data.coder_workspace.me.start_count
   source         = "registry.coder.com/modules/vscode-web/coder"
-  version        = "1.0.30"
+  version        = "1.4.1"
   agent_id       = coder_agent.code-toolbox.id
   accept_license = true
   folder         = "/home/${data.coder_workspace_owner.me.name}"
   install_prefix = "/home/${data.coder_workspace_owner.me.name}/vscode-web"
+  extensions     = ["github.copilot", "ms-python.python", "ms-toolsai.jupyter"]
 }
 
 module "personalize" {
@@ -291,14 +300,24 @@ module "personalize" {
 }
 
 module "jetbrains_gateway" {
+  count          = data.coder_parameter.jetbrains_gateway.value ? 1 : 0
   source         = "registry.coder.com/modules/jetbrains-gateway/coder"
-  version        = "1.0.28"
+  version        = "1.2.2"
   agent_id       = coder_agent.code-toolbox.id
   agent_name     = "code_toolbox"
   folder         = "/home/${data.coder_workspace_owner.me.name}"
   jetbrains_ides = ["CL", "GO", "IU", "PY", "WS"]
   default        = "PY"
   latest         = true
+}
+
+module "git-clone" {
+  count    = data.coder_parameter.git_repo.value != "" ? 1 : 0
+  source   = "registry.coder.com/coder/git-clone/coder"
+  version  = "1.1.1"
+  agent_id = coder_agent.code-toolbox.id
+  url      = data.coder_parameter.git_repo.value
+  base_dir = "/home/${data.coder_workspace_owner.me.name}"
 }
 
 resource "coder_agent" "code-toolbox" {
@@ -447,13 +466,13 @@ resource "random_uuid" "check-token-exchange" {
   lifecycle {
     precondition {
       condition     = contains([201, 204, 200], data.http.exchange_token[0].status_code)
-      error_message = "Invalid AAC Token"
+      error_message = "Invalid Token"
     }
   }
 }
 
 resource "kubernetes_secret" "code-toolbox-secret" {
-  count = (var.stsenabled && data.coder_workspace.me.start_count == 1 ) ? 1 : 0
+  count = (var.stsenabled && data.coder_workspace.me.start_count == 1) ? 1 : 0
   metadata {
     name      = "code-toolbox-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
@@ -488,6 +507,164 @@ resource "kubernetes_secret" "code-toolbox-secret" {
   }
 }
 
+resource "kubernetes_config_map" "code-toolbox-configmap" {
+  count = data.coder_workspace.me.start_count
+  metadata {
+    name      = "code-toolbox-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+    namespace = var.namespace
+    labels = {
+      "app.kubernetes.io/name"     = "code-toolbox-workspace"
+      "app.kubernetes.io/instance" = "code-toolbox-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+      "app.kubernetes.io/part-of"  = "coder"
+      "app.kubernetes.io/type"     = "configmap"
+      // Coder specific labels.
+      "com.coder.resource"       = "true"
+      "com.coder.workspace.id"   = data.coder_workspace.me.id
+      "com.coder.workspace.name" = data.coder_workspace.me.name
+      "com.coder.user.id"        = data.coder_workspace_owner.me.id
+      "com.coder.user.username"  = data.coder_workspace_owner.me.name
+    }
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
+    }
+  }
+
+  data = {
+    "passwd"  = <<EOF
+      root:x:0:0:root:/root:/bin/bash
+      daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+      bin:x:2:2:bin:/bin:/usr/sbin/nologin
+      sys:x:3:3:sys:/dev:/usr/sbin/nologin
+      sync:x:4:65534:sync:/bin:/bin/sync
+      games:x:5:60:games:/usr/games:/usr/sbin/nologin
+      man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+      lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+      mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+      news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+      uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+      proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+      www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+      backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+      list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+      irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+      _apt:x:42:65534::/nonexistent:/usr/sbin/nologin
+      nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+      ubuntu:x:1000:1000:Ubuntu:/home/ubuntu:/bin/bash
+      ${lower(data.coder_workspace_owner.me.name)}:x:10000:10000::/home/${lower(data.coder_workspace_owner.me.name)}:/bin/bash
+    EOF
+    "group"   = <<EOF
+      root:x:0:
+      daemon:x:1:
+      bin:x:2:
+      sys:x:3:
+      adm:x:4:ubuntu
+      tty:x:5:
+      disk:x:6:
+      lp:x:7:
+      mail:x:8:
+      news:x:9:
+      uucp:x:10:
+      man:x:12:
+      proxy:x:13:
+      kmem:x:15:
+      dialout:x:20:ubuntu
+      fax:x:21:
+      voice:x:22:
+      cdrom:x:24:ubuntu
+      floppy:x:25:ubuntu
+      tape:x:26:
+      sudo:x:27:ubuntu
+      audio:x:29:ubuntu
+      dip:x:30:ubuntu
+      www-data:x:33:
+      backup:x:34:
+      operator:x:37:
+      list:x:38:
+      irc:x:39:
+      src:x:40:
+      shadow:x:42:
+      utmp:x:43:
+      video:x:44:ubuntu
+      sasl:x:45:
+      plugdev:x:46:ubuntu
+      staff:x:50:
+      games:x:60:
+      users:x:100:
+      nogroup:x:65534:
+      ubuntu:x:1000:
+      rdma:x:101:
+      _ssh:x:102:
+      ${lower(data.coder_workspace_owner.me.name)}:x:10000:
+    EOF
+    "shadow"  = <<EOF
+      root:*:20237:0:99999:7:::
+      daemon:*:20237:0:99999:7:::
+      bin:*:20237:0:99999:7:::
+      sys:*:20237:0:99999:7:::
+      sync:*:20237:0:99999:7:::
+      games:*:20237:0:99999:7:::
+      man:*:20237:0:99999:7:::
+      lp:*:20237:0:99999:7:::
+      mail:*:20237:0:99999:7:::
+      news:*:20237:0:99999:7:::
+      uucp:*:20237:0:99999:7:::
+      proxy:*:20237:0:99999:7:::
+      www-data:*:20237:0:99999:7:::
+      backup:*:20237:0:99999:7:::
+      list:*:20237:0:99999:7:::
+      irc:*:20237:0:99999:7:::
+      _apt:*:20237:0:99999:7:::
+      nobody:*:20237:0:99999:7:::
+      ubuntu:!:20237:0:99999:7:::
+      ${lower(data.coder_workspace_owner.me.name)}:!:20291:0:99999:7:::
+    EOF
+    "gshadow" = <<EOF
+      root:*::
+      daemon:*::
+      bin:*::
+      sys:*::
+      adm:*::ubuntu
+      tty:*::
+      disk:*::
+      lp:*::
+      mail:*::
+      news:*::
+      uucp:*::
+      man:*::
+      proxy:*::
+      kmem:*::
+      dialout:*::ubuntu
+      fax:*::
+      voice:*::
+      cdrom:*::ubuntu
+      floppy:*::ubuntu
+      tape:*::
+      sudo:*::ubuntu
+      audio:*::ubuntu
+      dip:*::ubuntu
+      www-data:*::
+      backup:*::
+      operator:*::
+      list:*::
+      irc:*::
+      src:*::
+      shadow:*::
+      utmp:*::
+      video:*::ubuntu
+      sasl:*::
+      plugdev:*::ubuntu
+      staff:*::
+      games:*::
+      users:*::
+      nogroup:*::
+      ubuntu:!::
+      rdma:!::
+      _ssh:!::
+      ${lower(data.coder_workspace_owner.me.name)}:!::
+    EOF
+  }
+}
+
 resource "kubernetes_deployment" "code-toolbox" {
   count = data.coder_workspace.me.start_count
   depends_on = [
@@ -497,18 +674,20 @@ resource "kubernetes_deployment" "code-toolbox" {
   metadata {
     name      = "code-toolbox-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "code-toolbox-workspace"
-      "app.kubernetes.io/instance" = "code-toolbox-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "app.kubernetes.io/type"     = "workspace"
-      // Coder specific labels.
-      "com.coder.resource"       = "true"
-      "com.coder.workspace.id"   = data.coder_workspace.me.id
-      "com.coder.workspace.name" = data.coder_workspace.me.name
-      "com.coder.user.id"        = data.coder_workspace_owner.me.id
-      "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    labels = merge(
+      {
+        "app.kubernetes.io/name"     = "code-toolbox-workspace"
+        "app.kubernetes.io/instance" = "code-toolbox-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+        "app.kubernetes.io/part-of"  = "coder"
+        "app.kubernetes.io/type"     = "workspace"
+        // Coder specific labels.
+        "com.coder.resource"       = "true"
+        "com.coder.workspace.id"   = data.coder_workspace.me.id
+        "com.coder.workspace.name" = data.coder_workspace.me.name
+        "com.coder.user.id"        = data.coder_workspace_owner.me.id
+        "com.coder.user.username"  = data.coder_workspace_owner.me.name
+      },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
@@ -533,6 +712,12 @@ resource "kubernetes_deployment" "code-toolbox" {
           "app.kubernetes.io/instance" = "code-toolbox-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
           "app.kubernetes.io/part-of"  = "coder"
           "app.kubernetes.io/type"     = "workspace"
+          // Coder specific labels.
+          "com.coder.resource"       = "true"
+          "com.coder.workspace.id"   = data.coder_workspace.me.id
+          "com.coder.workspace.name" = data.coder_workspace.me.name
+          "com.coder.user.id"        = data.coder_workspace_owner.me.id
+          "com.coder.user.username"  = data.coder_workspace_owner.me.name
         }
       }
       spec {
@@ -554,27 +739,6 @@ resource "kubernetes_deployment" "code-toolbox" {
             type = "RuntimeDefault"
           }
         }
-        init_container {
-          name              = "copy-users-file"
-          image             = local.final_image
-          image_pull_policy = "Always"
-          command           = ["bash", "-c", "groupadd -g 10000 ${data.coder_workspace_owner.me.name} && useradd -m -u 10000 -g 10000 ${data.coder_workspace_owner.me.name} && cp /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc-backup/ && cp -raTp /home/${data.coder_workspace_owner.me.name}/ /home/${data.coder_workspace_owner.me.name}-backup/"]
-          volume_mount {
-            mount_path = "/home/${data.coder_workspace_owner.me.name}-backup"
-            name       = "home"
-            sub_path   = data.coder_workspace_owner.me.name
-            read_only  = false
-          }
-          volume_mount {
-            name       = "user"
-            mount_path = "/etc-backup"
-          }
-          security_context {
-            run_as_user                = "0"
-            run_as_group               = "0"
-            allow_privilege_escalation = var.privileged
-          }
-        }
         container {
           name        = "code-toolbox"
           image       = local.final_image
@@ -583,6 +747,7 @@ resource "kubernetes_deployment" "code-toolbox" {
           security_context {
             run_as_user                = "10000"
             allow_privilege_escalation = var.privileged
+            run_as_non_root            = true
             capabilities {
               drop = [
                 "ALL"
@@ -626,7 +791,7 @@ resource "kubernetes_deployment" "code-toolbox" {
             for_each = var.extra_vars ? [1] : []
             content {
               config_map_ref {
-                name = "code-toolbox-experimental-additional-env"
+                name = "code-toolbox-additional-env"
               }
             }
           }
@@ -723,8 +888,24 @@ resource "kubernetes_deployment" "code-toolbox" {
         }
         volume {
           name = "user"
-          empty_dir {
-            size_limit = "2Mi"
+          config_map {
+            name = "code-toolbox-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+            items {
+              key  = "passwd"
+              path = "passwd"
+            }
+            items {
+              key  = "group"
+              path = "group"
+            }
+            items {
+              key  = "shadow"
+              path = "shadow"
+            }
+            items {
+              key  = "gshadow"
+              path = "gshadow"
+            }
           }
         }
         dynamic "volume" {

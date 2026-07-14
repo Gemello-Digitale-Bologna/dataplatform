@@ -15,6 +15,10 @@ spec:
   selector:
     matchLabels:
       {{- include "core.selectorLabels" . | nindent 6 }}
+  {{- if and (not .Values.solr.enabled) .Values.lucene.persistence.enabled (or (eq .Values.lucene.persistence.accessMode "ReadWriteOnce") (eq .Values.lucene.persistence.accessMode "ReadWriteOncePod")) }}
+  strategy:
+    type: Recreate
+  {{- end }}
   template:
     metadata:
       annotations:
@@ -36,25 +40,8 @@ spec:
       serviceAccountName: {{ include "core.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.solr.enabled }}
-      initContainers:
-        - name: wait-solr
-          image: {{ .Values.solr.collection.initialize.image }}
-          command: ["/bin/sh", "-c"]
-          args:
-          {{- if not .Values.solr.collection.initialize.enabled }}
-            - until [ "$(curl -s -w '%{http_code}' -o /dev/null "{{ .Values.solr.url }}/admin/info/health")" -eq 200 ]; do echo "waiting for solr to be ready"; sleep 5; done
-          {{- else }}
-            - until [ "$(curl --user admin:$SOLR_ADMIN_PWD -s -w '%{http_code}' -o /dev/null "{{ .Values.solr.url }}/admin/info/health")" -eq 200 ]; do echo "waiting for solr to be ready"; sleep 5; done
-          env:
-            - name: "SOLR_ADMIN_PWD"
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.solr.collection.initialize.securityJsonSecret }}
-                  key: admin
-          {{- end }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
@@ -65,7 +52,7 @@ spec:
           env:
           {{- if .Values.sts.enabled }}
             - name: DB_CREDENTIALS_USER
-              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.usernameKey }}
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.clientIdKey }}
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.sts.client.existingSecret.name }}
@@ -74,52 +61,33 @@ spec:
               value: {{ .Values.sts.client.clientId }}
               {{- end }}
             - name: DB_CREDENTIALS_PASSWORD
-              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.passwordKey }}
+              {{- if and .Values.sts.client.existingSecret.name .Values.sts.client.existingSecret.clientSecretKey }}
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.sts.client.existingSecret.name }}
-                  key: {{ .Values.sts.client.existingSecret.clientSecretKey}}
+                  key: {{ .Values.sts.client.existingSecret.clientSecretKey }}
               {{- else }}
               value: {{ .Values.sts.client.clientSecret }}
               {{- end }}
           {{- end }}
-          {{- if .Values.s3.dynamicCreds.enabled }}
-            - name: MINIO_CREDENTIALS_ACCESS_KEY
-            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.accessKeyKey }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.s3.existingSecret.name }}
-                  key: {{ .Values.s3.existingSecret.accessKeyKey }}
-            {{- else }}
-              value: {{ .Values.s3.accessKey }}
-            {{- end }}
-            - name: MINIO_CREDENTIALS_SECRET_KEY
-            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.secretKeyKey }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.s3.existingSecret.name }}
-                  key: {{ .Values.s3.existingSecret.secretKeyKey }}
-            {{- else }}
-              value: {{ .Values.s3.secretKey }}
-            {{- end }}
-          {{- else }}
+          {{- if .Values.s3.enabled }}
             - name: AWS_ACCESS_KEY
-            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.accessKeyKey }}
+            {{- if and .Values.s3.credentials.existingSecret.name .Values.s3.credentials.existingSecret.accessKeyKey }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.s3.existingSecret.name }}
-                  key: {{ .Values.s3.existingSecret.accessKeyKey }}
+                  name: {{ .Values.s3.credentials.existingSecret.name }}
+                  key: {{ .Values.s3.credentials.existingSecret.accessKeyKey }}
             {{- else }}
-              value: {{ .Values.s3.secretKey }}
+              value: {{ .Values.s3.credentials.secretKey }}
             {{- end }}
             - name: AWS_SECRET_KEY
-            {{- if and .Values.s3.existingSecret.name .Values.s3.existingSecret.secretKeyKey }}
+            {{- if and .Values.s3.credentials.existingSecret.name .Values.s3.credentials.existingSecret.secretKeyKey }}
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.s3.existingSecret.name }}
-                  key: {{ .Values.s3.existingSecret.secretKeyKey }}
+                  name: {{ .Values.s3.credentials.existingSecret.name }}
+                  key: {{ .Values.s3.credentials.existingSecret.secretKeyKey }}
             {{- else }}
-              value: {{ .Values.s3.secretKey }}
+              value: {{ .Values.s3.credentials.secretKey }}
             {{- end }}
           {{- end }}
             - name: JDBC_USER
@@ -147,26 +115,57 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.authentication.openId.externalSecret.name }}
                   key: {{ .Values.authentication.openId.externalSecret.key }}
-              {{- else}}
+              {{- else }}
               value: {{ .Values.authentication.openId.oidcClientId }}
               {{- end }}
             {{- end }}
             - name: JWT_CLIENT_ID
+              {{- if and .Values.coreAuthCreds.existingSecret.secretName .Values.coreAuthCreds.existingSecret.clientIdKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coreAuthCreds.existingSecret.secretName }}
+                  key: {{ .Values.coreAuthCreds.existingSecret.clientIdKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: core-auth-creds
                   key: clientId
+              {{- end }}
             - name: JWT_CLIENT_SECRET
+              {{- if and .Values.coreAuthCreds.existingSecret.secretName .Values.coreAuthCreds.existingSecret.clientSecretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coreAuthCreds.existingSecret.secretName }}
+                  key: {{ .Values.coreAuthCreds.existingSecret.clientSecretKey }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: core-auth-creds
                   key: clientSecret
-            {{- if .Values.solr.collection.initialize.enabled }}
+              {{- end }}
+            {{- if and .Values.solr.enabled .Values.solr.basicAuth.enabled }}
+            {{- if .Values.solr.basicAuth.credentials.existingSecrets.admin.secretName }}
+            - name: SOLR_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.solr.basicAuth.credentials.existingSecrets.admin.secretName }}
+                  key: {{ .Values.solr.basicAuth.credentials.existingSecrets.admin.usernameKey }}
+            - name: SOLR_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.solr.basicAuth.credentials.existingSecrets.admin.secretName }}
+                  key: {{ .Values.solr.basicAuth.credentials.existingSecrets.admin.passwordKey }}
+            - name: SOLR_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ else }}{{ .Values.solr.basicAuth.credentials.existingSecrets.admin.secretName }}{{ end }}
+                  key: {{ if .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ .Values.solr.basicAuth.credentials.existingSecrets.user.usernameKey }}{{ else }}{{ .Values.solr.basicAuth.credentials.existingSecrets.admin.usernameKey }}{{ end }}
             - name: SOLR_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.solr.collection.initialize.securityJsonSecret }}
-                  key: user
+                  name: {{ if .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ else }}{{ .Values.solr.basicAuth.credentials.existingSecrets.admin.secretName }}{{ end }}
+                  key: {{ if .Values.solr.basicAuth.credentials.existingSecrets.user.secretName }}{{ .Values.solr.basicAuth.credentials.existingSecrets.user.passwordKey }}{{ else }}{{ .Values.solr.basicAuth.credentials.existingSecrets.admin.passwordKey }}{{ end }}
+            {{- end }}
             {{- end }}
           envFrom:
           - configMapRef:
@@ -175,6 +174,11 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+            {{- if .Values.healthcheck.enabled }}
+            - name: {{ .Values.healthcheck.service.portName }}
+              containerPort: {{ .Values.healthcheck.service.port }}
+              protocol: {{ .Values.healthcheck.service.protocol }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
@@ -183,14 +187,41 @@ spec:
               mountPath: "{{ .Values.keystore.keystorePath }}/{{ .Values.keystore.existingSecret.keyName }}"
               subPath: {{ .Values.keystore.existingSecret.keyName }}
           {{- end }}
+          {{- if and .Values.lucene.indexPath .Values.lucene.persistence.enabled (not .Values.solr.enabled) }}
+            - name: lucene
+              mountPath: {{ .Values.lucene.indexPath }}
+          {{- end }}
           {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.healthcheck.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthcheck.livenessProbe.path }}
+              port: {{ .Values.healthcheck.service.portName }}
+            periodSeconds: {{ .Values.healthcheck.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthcheck.readinessProbe.path }}
+              port: {{ .Values.healthcheck.service.portName }}
+            periodSeconds: {{ .Values.healthcheck.readinessProbe.periodSeconds }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.healthcheck.startupProbe.path }}
+              port: {{ .Values.healthcheck.service.portName }}
+            failureThreshold: {{ .Values.healthcheck.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.healthcheck.startupProbe.periodSeconds }}
           {{- end }}
       volumes:
       {{- if and .Values.keystore.existingSecret.secretName .Values.keystore.keystorePath }}
         - name: keystore
           secret:
             secretName: {{ .Values.keystore.existingSecret.secretName }}
+      {{- end }}
+      {{- if and .Values.lucene.indexPath .Values.lucene.persistence.enabled (not .Values.solr.enabled) }}
+        - name: lucene
+          persistentVolumeClaim:
+            claimName: {{ include "core.fullname" . }}-lucene
       {{- end }}
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}

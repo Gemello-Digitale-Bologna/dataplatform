@@ -6,11 +6,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 2.4.2"
+      version = "~> 2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.36.0"
+      version = "~> 2.38.0"
     }
     http = {
       source  = "hashicorp/http"
@@ -27,6 +27,7 @@ provider "http" {
 
 locals {
   jupyter_url = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}jupyter--jupyter--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  decoded_labels = var.extra_labels != "" ? jsondecode(base64decode(var.extra_labels)) : {}
 }
 
 variable "use_kubeconfig" {
@@ -90,14 +91,19 @@ variable "stsenabled" {
   default = false
 }
 
-variable "core_auth_creds" {
+variable "core_auth_creds_secret" {
   type    = string
   default = "core-auth-creds"
 }
 
-variable "clientId" {
+variable "client_id_key" {
   type    = string
-  default = "core-auth-creds"
+  default = "clientId"
+}
+
+variable "client_secret_key" {
+  type    = string
+  default = "clientSecret"
 }
 
 variable "dhcore_endpoint" {
@@ -113,6 +119,12 @@ variable "dhcore_issuer" {
 variable "extra_vars" {
   type    = bool
   default = false
+}
+
+variable "extra_labels" {
+  type    = string
+  description = "Extra labels that will be used by the workspace deployment. The labels must be in json format and encoded in Base64."
+  default = ""
 }
 
 data "coder_parameter" "cpu" {
@@ -208,7 +220,7 @@ data "http" "exchange_token" {
   # Optional request headers
   request_headers = {
     Content-Type  = "application/x-www-form-urlencoded"
-    Authorization = "Basic ${base64encode("${data.kubernetes_secret.auth.data["clientId"]}:${data.kubernetes_secret.auth.data["clientSecret"]}")}"
+    Authorization = "Basic ${base64encode("${data.kubernetes_secret.auth.data[var.client_id_key]}:${data.kubernetes_secret.auth.data[var.client_secret_key]}")}"
   }
 
   request_body = "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&scope=openid%20offline_access%20credentials&subject_token_type=urn:ietf:params:oauth:token-type:access_token&subject_token=${data.coder_workspace_owner.me.oidc_access_token}"
@@ -225,7 +237,7 @@ data "coder_workspace_owner" "me" {}
 
 data "kubernetes_secret" "auth" {
   metadata {
-    name      = var.core_auth_creds
+    name      = var.core_auth_creds_secret
     namespace = var.namespace
   }
 }
@@ -373,7 +385,7 @@ resource "random_uuid" "check-token-exchange" {
   lifecycle {
     precondition {
       condition     = contains([201, 204, 200], data.http.exchange_token[0].status_code)
-      error_message = "Invalid AAC Token"
+      error_message = "Invalid Token"
     }
   }
 }
@@ -424,7 +436,8 @@ resource "kubernetes_deployment" "jupyter" {
   metadata {
     name      = "jupyter-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
+    labels = merge(
+    {
       "app.kubernetes.io/name"     = "jupyter-workspace"
       "app.kubernetes.io/instance" = "jupyter-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
       "app.kubernetes.io/part-of"  = "coder"
@@ -435,7 +448,8 @@ resource "kubernetes_deployment" "jupyter" {
       "com.coder.workspace.name" = data.coder_workspace.me.name
       "com.coder.user.id"        = data.coder_workspace_owner.me.id
       "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }

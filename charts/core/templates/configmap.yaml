@@ -7,28 +7,28 @@ kind: ConfigMap
 metadata:
   name: {{ include "core.fullname" . }}
 data:
+  DH_NAME: {{ .Release.Name }}
   DH_ENDPOINT: "{{ include "core.endpoint" . }}"
   K8S_NAMESPACE: {{ .Release.Namespace }}
   JDBC_PLATFORM: postgresql
   JDBC_URL: {{ printf "%s%s:%s/%s" "jdbc:postgresql://" .Values.postgres.host .Values.postgres.port .Values.postgres.database }}
   JDBC_DRIVER: org.postgresql.Driver
 {{- if not .Values.sts.enabled }}
-  DH_CONFIG_COMMON_SECRETS: digitalhub-common-creds
+  DH_CONFIG_COMMON_SECRETS: {{ .Values.commonCredsSecret.secretName }}
 {{- end }}
   DH_CONFIG_COMMON_MAPS: digitalhub-common-env
   LOG_LEVEL: INFO
   RUNTIME_DBT_IMAGE: {{ .Values.runtime.dbt.image }}:{{ .Values.runtime.dbt.tag }}
   RUNTIME_KFP_IMAGE: {{ .Values.runtime.kfp.image }}:{{ .Values.runtime.kfp.tag }}
+  RUNTIME_HERA_IMAGE: {{ .Values.runtime.hera.image }}:{{ .Values.runtime.hera.tag }}
   RUNTIME_PYTHON_IMAGE_3_9: {{ .Values.runtime.python.image }}:{{ .Values.runtime.python.tag3_9 }}
   RUNTIME_PYTHON_IMAGE_3_10: {{ .Values.runtime.python.image }}:{{ .Values.runtime.python.tag3_10 }}
   RUNTIME_PYTHON_IMAGE_3_11: {{ .Values.runtime.python.image }}:{{ .Values.runtime.python.tag3_11 }}
+  RUNTIME_PYTHON_IMAGE_3_12: {{ .Values.runtime.python.image }}:{{ .Values.runtime.python.tag3_12 }}
   RUNTIME_HUGGINGFACE_SERVE_IMAGE: {{ .Values.runtime.huggingFace.image }}:{{ .Values.runtime.huggingFace.tag }}
 {{- if .Values.solr.enabled }}
   SOLR_URL: {{ .Values.solr.url }}
   SOLR_COLLECTION: {{ .Values.solr.collection.name }}
-  {{- if .Values.solr.collection.initialize.enabled }}
-  SOLR_USER: {{ .Values.solr.user }}
-  {{- end }}
 {{- end }}
 {{- if .Values.authentication.basic.enabled }}
   DH_AUTH_BASIC_USER: {{ .Values.authentication.basic.username }}
@@ -44,12 +44,25 @@ data:
   DH_AUTH_OIDC_SCOPE: {{ .Values.authentication.openId.scope }}
   DH_AUTH_JWT_USERNAME: {{ .Values.authentication.openId.jwtUsername }}
 {{- end }}
-{{- if .Values.global.registry.url }}
-  DOCKER_REGISTRY: {{ .Values.global.registry.url }}
-  KANIKO_IMAGE_PREFIX: {{ .Values.registry.kaniko.imagePrefix | default .Release.Namespace }}
-  DOCKER_REGISTRY_SECRET: {{ .Values.global.registry.secretName }}
+{{- if .Values.global.ociRegistry.url }}
+  IMAGE_REGISTRY: {{ .Values.global.ociRegistry.url }}
+  BUILDER_IMAGE_PREFIX: {{ .Values.registry.kaniko.imagePrefix | default .Release.Namespace }}
+  IMAGE_REGISTRY_SECRET: {{ .Values.global.ociRegistry.secretName }}
+  {{- if eq .Values.builder.framework.name "kaniko" }}
+  BUILDER_FRAMEWORK: {{ .Values.builder.framework.name }}
+  KANIKO_IMAGE: {{ .Values.builder.framework.image }}
+  {{ if .Values.builder.framework.secret -}}KANIKO_SECRET: {{ .Values.builder.framework.secret }}{{- end }}
+  {{ if .Values.builder.framework.args -}}KANIKO_ARGS: {{ join "," .Values.builder.framework.args | quote }}{{- end }}
+  {{- else if eq .Values.builder.framework.name "buildkit" }}
+  BUILDER_FRAMEWORK: {{ .Values.builder.framework.name }}
+  BUILDKIT_IMAGE: {{ .Values.builder.framework.image }}
+  {{- if .Values.builder.framework.secret }}BUILDKIT_SECRET: {{ .Values.builder.framework.secret }}{{ end }}
+  BUILDKIT_COMMAND: {{ .Values.builder.framework.command }}
+  BUILDKIT_ARGS: {{ join "," .Values.builder.framework.args | quote }}
+  {{ if index .Values "builder" "framework" "client-secret" "name" -}}BUILDKIT_CLIENT_SECRET_NAME: {{ index .Values "builder" "framework" "client-secret" "name" }}{{- end }}
+  {{ if index .Values "builder" "framework" "client-secret" "mount-path" -}}BUILDKIT_CLIENT_SECRET_MOUNT_PATH: {{ index .Values "builder" "framework" "client-secret" "mount-path" }}{{- end }}
+  {{- end }}
 {{- end }}
-  KANIKO_ARGS: {{ .Values.kanikoArgs | quote }}
   DH_CORS_ORIGINS: {{ .Values.corsOrigin | quote }}
 {{- if and .Values.keystore.existingSecret.secretName .Values.keystore.keystorePath }}
   JWT_KEYSTORE_PATH: "{{ .Values.keystore.keystorePath }}/{{ .Values.keystore.existingSecret.keyName }}"
@@ -60,12 +73,18 @@ data:
 {{- end }}
   JWT_ACCESS_TOKEN_DURATION: {{ .Values.coreTokens.accessTokenDuration | quote }}
   JWT_REFRESH_TOKEN_DURATION: {{ .Values.coreTokens.refreshTokenDuration | quote }}
-  S3_CREDENTIALS_PROVIDER: {{ if and .Values.s3.enabled (not .Values.s3.dynamicCreds.enabled) }}"true"{{ else }}"false"{{ end }}
+  S3_CREDENTIALS_PROVIDER: {{ if .Values.s3.enabled }}"true"{{ else }}"false"{{ end }}
 {{- if .Values.s3.enabled }}
+  {{ if .Values.s3.credentials.policy}}S3_CREDENTIALS_POLICY: {{ .Values.s3.credentials.policy | quote }}{{ end }}
+  S3_SIGNATURE_VERSION: {{ .Values.s3.signatureVersion }}
+  S3_PATH_STYLE_ACCESS: {{ .Values.s3.pathStyleAccess | quote }}
+  {{ if .Values.s3.credentials.claimPrefix }}S3_CREDENTIALS_CLAIM_PREFIX: {{ .Values.s3.credentials.claimPrefix | quote }}{{ end }}
+  {{ if .Values.s3.credentials.roleArn }}S3_CREDENTIALS_ROLE_ARN: {{ .Values.s3.credentials.roleArn }}{{ end }}
   AWS_DEFAULT_REGION: {{ .Values.s3.region }}
   FILES_DEFAULT_STORE: s3://{{ .Values.s3.bucket }}
   S3_ENDPOINT_URL: {{ .Values.s3.publicUrl }}
   S3_BUCKET: {{ .Values.s3.bucket }}
+  S3_CREDENTIALS_DURATION: {{ .Values.s3.credentials.duration | quote }}
 {{- end }}
 {{- if .Values.templates }}
   K8S_TEMPLATES: {{ include "core.templates" . | quote }}
@@ -78,12 +97,19 @@ data:
   K8S_RESOURCE_CPU_LIMIT: {{ .Values.additionalConfig.resources.cpuLim | quote }}
   K8S_RESOURCE_MEM_DEFAULT: {{ .Values.additionalConfig.resources.memReq | quote }}
   K8S_RESOURCE_MEM_LIMIT: {{ .Values.additionalConfig.resources.memLim | quote }}
-  K8S_RESOURCE_PVC_DEFAULT: {{ .Values.additionalConfig.resources.pvcReq | quote }}
-  K8S_RESOURCE_PVC_LIMIT: {{ .Values.additionalConfig.resources.pvcLim | quote }}
   K8S_RESOURCE_GPU_KEY: {{ .Values.additionalConfig.resources.gpuKey | quote }}
   K8S_SERVICE_TYPE: {{ .Values.additionalConfig.service.type | quote }}
   K8S_JOB_DEADLINE: {{ .Values.additionalConfig.job.deadline | quote }}
   K8S_JOB_SUSPEND: {{ .Values.additionalConfig.job.jobSuspend | quote }}
+  K8S_IMAGE_PULL_POLICY: {{ .Values.additionalConfig.image.pullPolicy | quote }}
+  K8S_RESOURCE_EPHEMERAL_STORAGE_CLASS: {{ .Values.additionalConfig.ephemeralVolume.storageClass | quote }}
+  K8S_RESOURCE_EPHEMERAL_LIMIT: {{ .Values.additionalConfig.ephemeralVolume.limits | quote }}
+  K8S_RESOURCE_EPHEMERAL_DEFAULT: {{ .Values.additionalConfig.ephemeralVolume.requests | quote }}
+  K8S_RESOURCE_PVC_STORAGE_CLASS: {{ .Values.additionalConfig.persistenVolumeClaim.storageClass | quote }}
+  K8S_RESOURCE_PVC_LIMIT: {{ .Values.additionalConfig.persistenVolumeClaim.limits | quote }}
+  K8S_RESOURCE_PVC_DEFAULT: {{ .Values.additionalConfig.persistenVolumeClaim.requests | quote }}
+  K8S_RESOURCE_WORKFLOW_STORAGE_CLASS: {{ .Values.additionalConfig.workflow.volume.storageClassName | quote }}
+  K8S_RESOURCE_WORKFLOW_ACCESS_MODE: {{ .Values.additionalConfig.workflow.volume.accessMode | quote }}
 {{- if .Values.kubeai.enabled }}
   RUNTIME_KUBEAI_ENDPOINT: {{ printf "%s%s:%s" "http://" .Values.kubeai.serviceName .Values.kubeai.port | quote }}
 {{- end }}
@@ -102,12 +128,6 @@ data:
   DB_CREDENTIALS_CLAIM: {{ .Values.sts.jwt.claim }}
   DB_CREDENTIALS_ROLE: {{ .Values.sts.credentials.roles }}
   {{- end }}
-  MINIO_CREDENTIALS_PROVIDER: {{ if .Values.s3.dynamicCreds.enabled }}"true"{{ else }}"false"{{ end }}
-  {{- if .Values.s3.dynamicCreds.enabled }}
-  MINIO_CREDENTIALS_ENDPOINT: {{ .Values.s3.publicUrl }}
-  MINIO_CREDENTIALS_REGION: {{ .Values.s3.region }}
-  {{- end }}
 {{- end }}
-  LUCENE_INDEX_PATH: {{ .Values.lucene.indexPath | quote }}
+  LUCENE_INDEX_PATH: {{ if .Values.solr.enabled }}"false"{{ else }}{{ .Values.lucene.indexPath | quote }}{{ end }}
   LUCENE_REINDEX: {{ .Values.lucene.reindex | quote }}
-  K8S_RESOURCE_PVC_STORAGE_CLASS: {{ .Values.defaultStorageClass | quote }}

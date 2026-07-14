@@ -6,11 +6,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "~> 2.4.2"
+      version = "~> 2.11.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.36.0"
+      version = "~> 2.38.0"
     }
   }
 }
@@ -19,7 +19,8 @@ provider "coder" {
 }
 
 locals {
-  dremio_url = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}dremio--dremio--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  dremio_url     = "%{if var.https == true}https://%{else}http://%{endif}%{if var.service_type == "ClusterIP"}dremio--dremio--${data.coder_workspace.me.name}--${data.coder_workspace_owner.me.name}.${var.external_url}%{else}${var.external_url}:${var.node_port}%{endif}"
+  decoded_labels = var.extra_labels != "" ? jsondecode(base64decode(var.extra_labels)) : {}
 }
 
 variable "use_kubeconfig" {
@@ -48,15 +49,15 @@ variable "postgresql_hostname" {
   default     = "database-postgres-cluster"
 }
 
-variable "minio_endpoint" {
+variable "s3_endpoint" {
   type        = string
-  description = "Minio endpoint"
-  default     = "minio:9000"
+  description = "S3 endpoint"
+  default     = "seaweedfs-s3:8333"
 }
 
-variable "minio_bucket" {
+variable "s3_bucket" {
   type        = string
-  description = "Minio bucket name"
+  description = "S3 bucket name"
   default     = "datalake"
 }
 
@@ -69,7 +70,16 @@ variable "postgresql_db_name" {
 variable "postgresql_creds_secret" {
   type        = string
   description = "Postgresql database credentials secret"
-  default     = "digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do"
+}
+
+variable "postgresql_username_key" {
+  type        = string
+  description = "Postgresql database credentials username key"
+}
+
+variable "postgresql_password_key" {
+  type        = string
+  description = "Postgresql database credentials password key"
 }
 
 variable "service_type" {
@@ -105,13 +115,29 @@ variable "external_url" {
   type = string
 }
 
-variable "minio_digitalhub_user_secret" {
+variable "s3_platform_user_secret" {
   type = string
+}
+
+variable "s3_access_key_key" {
+  type    = string
+  default = "accessKey"
+}
+
+variable "s3_secret_key_key" {
+  type    = string
+  default = "secretKey"
 }
 
 variable "extra_vars" {
   type    = bool
   default = false
+}
+
+variable "extra_labels" {
+  type        = string
+  description = "Extra labels that will be used by the workspace deployment. The labels must be in json format and encoded in Base64."
+  default     = ""
 }
 
 provider "kubernetes" {
@@ -202,14 +228,14 @@ resource "coder_metadata" "dremio" {
     value = local.dremio_url
   }
   item {
-  key = "Username"
-  value = data.coder_workspace_owner.me.email
-  sensitive = false
+    key       = "Username"
+    value     = data.coder_workspace_owner.me.email
+    sensitive = false
   }
   item {
-  key = "Password"
-  value = random_password.password.result
-  sensitive = true
+    key       = "Password"
+    value     = random_password.password.result
+    sensitive = true
   }
 }
 
@@ -300,18 +326,20 @@ resource "kubernetes_job" "source-init" {
   metadata {
     name      = "dremio-source-init-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "dremio-source-init"
-      "app.kubernetes.io/instance" = "dremio-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "app.kubernetes.io/type"     = "job"
-      // Coder specific labels.
-      "com.coder.resource"       = "true"
-      "com.coder.workspace.id"   = data.coder_workspace.me.id
-      "com.coder.workspace.name" = data.coder_workspace.me.name
-      "com.coder.user.id"        = data.coder_workspace_owner.me.id
-      "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    labels = merge(
+      {
+        "app.kubernetes.io/name"     = "dremio-source-init"
+        "app.kubernetes.io/instance" = "dremio-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+        "app.kubernetes.io/part-of"  = "coder"
+        "app.kubernetes.io/type"     = "job"
+        // Coder specific labels.
+        "com.coder.resource"       = "true"
+        "com.coder.workspace.id"   = data.coder_workspace.me.id
+        "com.coder.workspace.name" = data.coder_workspace.me.name
+        "com.coder.user.id"        = data.coder_workspace_owner.me.id
+        "com.coder.user.username"  = data.coder_workspace_owner.me.name
+      },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
@@ -322,12 +350,25 @@ resource "kubernetes_job" "source-init" {
       spec {
         init_container {
           name    = "wait-for-dremio"
-          image   = "badouralix/curl-jq"
+          image   = "curlimages/curl:8.15.0"
           command = ["/bin/sh", "-c", "until [ \"$(curl -s -w '%%{http_code}' -o /dev/null \"http://${kubernetes_service.dremio-service.metadata.0.name}:9047/api/v2/buildinfo\")\" -eq 200 ]; do echo \"waiting for dremio to be ready\"; sleep 5; done"]
+          security_context {
+            run_as_user                = "1000"
+            allow_privilege_escalation = false
+            capabilities {
+              drop = [
+                "ALL"
+              ]
+            }
+            run_as_non_root = true
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
+          }
         }
         init_container {
           name              = "init-dremio-data"
-          image             = "dremio/dremio-oss:24.1.0"
+          image             = var.image
           image_pull_policy = "IfNotPresent"
           command           = ["/bin/bash", "/tmp/init/init-data.sh"]
           env {
@@ -374,12 +415,12 @@ resource "kubernetes_job" "source-init" {
             value = kubernetes_service.dremio-service.metadata.0.name
           }
           env {
-            name  = "MINIO_ENDPOINT"
-            value = var.minio_endpoint
+            name  = "S3_ENDPOINT"
+            value = var.s3_endpoint
           }
           env {
-            name  = "MINIO_BUCKET"
-            value = var.minio_bucket
+            name  = "S3_BUCKET"
+            value = var.s3_bucket
           }
           env {
             name  = "PSQL_HOSTNAME"
@@ -394,7 +435,7 @@ resource "kubernetes_job" "source-init" {
             value_from {
               secret_key_ref {
                 name = var.postgresql_creds_secret
-                key  = "username"
+                key  = var.postgresql_username_key
               }
             }
           }
@@ -403,25 +444,25 @@ resource "kubernetes_job" "source-init" {
             value_from {
               secret_key_ref {
                 name = var.postgresql_creds_secret
-                key  = "password"
+                key  = var.postgresql_password_key
               }
             }
           }
           env {
-            name = "MINIO_USERNAME"
+            name = "S3_USERNAME"
             value_from {
               secret_key_ref {
-                name = var.minio_digitalhub_user_secret
-                key  = "digitalhubUser"
+                name = var.s3_platform_user_secret
+                key  = var.s3_access_key_key
               }
             }
           }
           env {
-            name = "MINIO_PASSWORD"
+            name = "S3_PASSWORD"
             value_from {
               secret_key_ref {
-                name = var.minio_digitalhub_user_secret
-                key  = "digitalhubPassword"
+                name = var.s3_platform_user_secret
+                key  = var.s3_secret_key_key
               }
             }
           }
@@ -429,10 +470,29 @@ resource "kubernetes_job" "source-init" {
             name  = "DREMIO_CODER_EMAIL"
             value = data.coder_workspace_owner.me.email
           }
+          security_context {
+            run_as_user                = "1000"
+            allow_privilege_escalation = false
+            capabilities {
+              drop = [
+                "ALL"
+              ]
+            }
+            run_as_non_root = true
+            seccomp_profile {
+              type = "RuntimeDefault"
+            }
+          }
           volume_mount {
             name       = "init-files"
             mount_path = "/init-files"
             read_only  = true
+          }
+        }
+        security_context {
+          run_as_non_root = true
+          seccomp_profile {
+            type = "RuntimeDefault"
           }
         }
         volume {
@@ -471,18 +531,20 @@ resource "kubernetes_deployment" "dremio" {
   metadata {
     name      = "dremio-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "dremio-workspace"
-      "app.kubernetes.io/instance" = "dremio-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "app.kubernetes.io/type"     = "workspace"
-      // Coder specific labels.
-      "com.coder.resource"       = "true"
-      "com.coder.workspace.id"   = data.coder_workspace.me.id
-      "com.coder.workspace.name" = data.coder_workspace.me.name
-      "com.coder.user.id"        = data.coder_workspace_owner.me.id
-      "com.coder.user.username"  = data.coder_workspace_owner.me.name
-    }
+    labels = merge(
+      {
+        "app.kubernetes.io/name"     = "dremio-workspace"
+        "app.kubernetes.io/instance" = "dremio-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
+        "app.kubernetes.io/part-of"  = "coder"
+        "app.kubernetes.io/type"     = "workspace"
+        // Coder specific labels.
+        "com.coder.resource"       = "true"
+        "com.coder.workspace.id"   = data.coder_workspace.me.id
+        "com.coder.workspace.name" = data.coder_workspace.me.name
+        "com.coder.user.id"        = data.coder_workspace_owner.me.id
+        "com.coder.user.username"  = data.coder_workspace_owner.me.name
+      },
+    local.decoded_labels)
     annotations = {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
@@ -507,13 +569,19 @@ resource "kubernetes_deployment" "dremio" {
           "app.kubernetes.io/instance" = "dremio-workspace-${lower(data.coder_workspace_owner.me.name)}-${lower(data.coder_workspace.me.name)}"
           "app.kubernetes.io/part-of"  = "coder"
           "app.kubernetes.io/type"     = "workspace"
+          // Coder specific labels.
+          "com.coder.resource"       = "true"
+          "com.coder.workspace.id"   = data.coder_workspace.me.id
+          "com.coder.workspace.name" = data.coder_workspace.me.name
+          "com.coder.user.id"        = data.coder_workspace_owner.me.id
+          "com.coder.user.username"  = data.coder_workspace_owner.me.name
         }
       }
       spec {
         security_context {
-          run_as_user  = "999"
-          fs_group     = "999"
-          run_as_group = "999"
+          run_as_user     = "999"
+          fs_group        = "999"
+          run_as_group    = "999"
           run_as_non_root = true
           seccomp_profile {
             type = "RuntimeDefault"
